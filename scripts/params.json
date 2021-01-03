@@ -5,7 +5,7 @@
 	"training_params": {
 		"load_model": "",
 		"epochs": 1000,
-		"batch_size": 1,
+		"batch_size": 64,
 		"lr": 0.0003,
 		"saving_freq": 10
 	},
@@ -31,7 +31,7 @@
 		"lambda_collision": 0.5,
 		"lambda_feasibility": 0.05,
 		"optimization_lr": 0.01,
-		"ode_t_end": 200,
+		"ode_t_end": 150,
 		"ode_num_timestamps": 5
 	}
 }

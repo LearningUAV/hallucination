@@ -411,6 +411,41 @@ class Hallucination(nn.Module):
 
         return loss, (recon_loss, repulsive_loss, kl_loss)
 
+    def test(self, full_traj, reference_pts):
+        batch_size = full_traj.size(0)
+        idx = np.random.randint(batch_size)
+        full_traj = full_traj[idx:idx + 1]
+        reference_pts = reference_pts[idx:idx + 1]
+
+        model_params = self.model_params
+        _, _, loc, _, _, size = self.encoder(full_traj)
+        # initial traj before optimization, straight line from start to goal, (1, num_control_pts, Dy)
+        init_control_pts = reference_pts[:, None, 0] + \
+                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None] * \
+                           (reference_pts[:, None, -1] - reference_pts[:, None, 0])
+
+        decoder = self.decoder
+        opt_func = decoder.opt_func
+        opt_func.update(loc, size, reference_pts)
+        init_control_pts = init_control_pts.view(init_control_pts.size(0), -1)
+        # (ode_num_timestamps, 1, num_control_pts * Dy)
+        recon_control_points = odeint(decoder.opt_func, init_control_pts, decoder.t)
+        ode_num_timestamps = recon_control_points.size(0)
+        losses = []
+        for i in range(ode_num_timestamps):
+            loss = opt_func.loss(recon_control_points[i])
+            losses.append(loss.item())
+        losses = np.stack(losses)
+
+        loc = loc[0].cpu().detach().numpy()
+        size = size[0].cpu().detach().numpy()
+        recon_control_points = recon_control_points[:, 0].view(ode_num_timestamps, -1, self.params.Dy)
+        recon_control_points = recon_control_points.cpu().detach().numpy()
+
+        reference_pts = reference_pts[0].cpu().detach().numpy()
+
+        return reference_pts, loc, size, recon_control_points, losses
+
     def train(self, training=True):
         self.training = training
         self.encoder.train(training)

@@ -12,6 +12,7 @@ import torchvision.transforms as transforms
 
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
+from utils import plot_ode_opt
 
 
 class AttrDict(dict):
@@ -105,6 +106,8 @@ def train(params):
             writer.add_scalar("train/recon_loss", np.mean(recon_losses), epoch)
             writer.add_scalar("train/repulsive_loss", np.mean(repulsive_losses), epoch)
             writer.add_scalar("train/kl_loss", np.mean(kl_losses), epoch)
+
+            plot_ode_opt(writer, model, full_traj, reference_pts, epoch)
 
         if (epoch + 1) % training_params.saving_freq == 0:
             torch.save(model.state_dict(), os.path.join(model_dir, "model_{0}".format(epoch + 1)),
