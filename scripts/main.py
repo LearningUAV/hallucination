@@ -57,7 +57,7 @@ def train(params):
     dataset = HallucinationDataset(params, transform=transforms.Compose([ToTensor(device)]))
     dataloader = DataLoader(dataset, batch_size=training_params.batch_size, shuffle=True)
 
-    model = Hallucination(params)
+    model = Hallucination(params).to(device)
     if training_params.load_model is not None and os.path.exists(training_params.load_model):
         model.load_state_dict(torch.load(training_params.load_model, map_location=device))
 
@@ -80,8 +80,6 @@ def train(params):
         model.train(training=True)
         for i_batch, sample_batched in enumerate(dataloader):
             # get the inputs; data is a list of [inputs, labels]
-            for key, val in sample_batched.items():
-                sample_batched[key] = val.to(device)
             full_traj = sample_batched["full_traj"]
             reference_pts = sample_batched["reference_pts"]
             traj = sample_batched["traj"]
@@ -107,6 +105,7 @@ def train(params):
             writer.add_scalar("train/repulsive_loss", np.mean(repulsive_losses), epoch)
             writer.add_scalar("train/kl_loss", np.mean(kl_losses), epoch)
 
+            model.train(training=False)
             plot_ode_opt(writer, model, full_traj, reference_pts, epoch)
 
         if (epoch + 1) % training_params.saving_freq == 0:

@@ -9,19 +9,20 @@ from torchdiffeq import odeint_adjoint as odeint
 
 EPS = 1e-6
 
+
 class Encoder(nn.Module):
     def __init__(self, params):
         super(Encoder, self).__init__()
         self.params = params
         self.model_params = model_params = params.model_params
 
-        self.conv1d_layes = []
+        self.conv1d_layers = nn.ModuleList()
         output_len = model_params.full_traj_len
         prev_channel = 2 * params.Dy
         for channel, kernel_size, stride in \
                 zip(model_params.encoder_channels, model_params.kernel_sizes, model_params.strides):
-            self.conv1d_layes.append(nn.Conv1d(in_channels=prev_channel, out_channels=channel,
-                                               kernel_size=kernel_size, stride=stride))
+            self.conv1d_layers.append(nn.Conv1d(in_channels=prev_channel, out_channels=channel,
+                                                kernel_size=kernel_size, stride=stride))
             prev_channel = channel
             output_len = int((output_len - kernel_size) / stride + 1)
         self.fc = nn.Linear(output_len * model_params.encoder_channels[-1], model_params.num_obs * params.Dy * 4)
@@ -34,7 +35,7 @@ class Encoder(nn.Module):
 
     def forward(self, input):
         output = input
-        for conv1d_layer in self.conv1d_layes:
+        for conv1d_layer in self.conv1d_layers:
             output = F.leaky_relu(conv1d_layer(output))
         output = output.view(output.size(0), -1)
         output = self.fc(output)
@@ -90,6 +91,7 @@ class OptimizationFunc(nn.Module):
 
     def loss(self, control_pts):
         params = self.params
+        device = params.device
         model_params = params.model_params
         optimization_params = params.optimization_params
         batch_size = control_pts.size(0)
@@ -164,6 +166,7 @@ class OptimizationFunc(nn.Module):
 
     def forward(self, t, control_pts):
         params = self.params
+        device = params.device
         model_params = params.model_params
         optimization_params = params.optimization_params
         batch_size = control_pts.size(0)
@@ -177,8 +180,6 @@ class OptimizationFunc(nn.Module):
         vel = (control_pts[:, 1:] - control_pts[:, :-1])                    # (B, num_control_pts - 1, Dy)
         acc = (vel[:, 1:] - vel[:, :-1])                                    # (B, num_control_pts - 2, Dy)
         jerk = (acc[:, 1:] - acc[:, :-1])                                    # (B, num_control_pts - 2, Dy)
-
-        smoothness_loss = torch.mean(torch.sum(jerk ** 2, dim=(1, 2)))
 
         smoothness_grad = torch.zeros_like(control_pts)
         smoothness_grad[:, :-3] += -1 * 2 * jerk
@@ -204,11 +205,8 @@ class OptimizationFunc(nn.Module):
 
         # see https://arxiv.org/pdf/2008.08835.pdf Eq 5
         a, b, c = 3 * clearance, -3 * clearance ** 2, clearance ** 3
-        collision_loss = torch.sum(dist_gt_0_le_clearance ** 3) + \
-            torch.sum(a * dist_gt_clearance ** 2 + b * dist_gt_clearance + c)
-        collision_loss /= batch_size
 
-        collision_grad = torch.zeros(batch_size, model_params.num_control_pts, model_params.num_obs, params.Dy)
+        collision_grad = torch.zeros(batch_size, model_params.num_control_pts, model_params.num_obs, params.Dy).to(device)
         collision_grad[gt_0_le_clearance_mask] += -3 * torch.unsqueeze(dist_gt_0_le_clearance ** 2, dim=-1) \
                                                   * self.direction[gt_0_le_clearance_mask]
         collision_grad[gt_clearance_mask] += -torch.unsqueeze(2 * a * dist_gt_clearance + b, dim=-1) \
@@ -262,30 +260,23 @@ class OptimizationFunc(nn.Module):
             vel = torch.abs(vel)
             ge_max_vel_mask = vel >= max_vel
             vel_ge_max_vel = vel[ge_max_vel_mask]
-            vel_feasibility_loss = (vel_ge_max_vel - max_vel) ** 2
 
-            vel_feasibility_grad = torch.zeros_like(control_pts)
+            vel_feasibility_grad = torch.zeros_like(control_pts).to(device)
             vel_feasibility_grad[:, :-1][ge_max_vel_mask] += -2 * (vel_ge_max_vel - max_vel) / knot_dt
             vel_feasibility_grad[:, 1:][ge_max_vel_mask] += 2 * (vel_ge_max_vel - max_vel) / knot_dt
 
             acc = torch.abs(acc)
             ge_max_acc_mask = acc >= max_acc
             acc_ge_max_acc = acc[ge_max_acc_mask]
-            acc_feasibility_loss = (acc_ge_max_acc - max_acc) ** 2
 
-            acc_feasibility_grad = torch.zeros_like(control_pts)
+            acc_feasibility_grad = torch.zeros_like(control_pts).to(device)
             acc_feasibility_grad[:, :-2][ge_max_acc_mask] += 2 * (acc_ge_max_acc - max_acc) / knot_dt ** 2
             acc_feasibility_grad[:, 1:-1][ge_max_acc_mask] += -4 * (acc_ge_max_acc - max_acc) / knot_dt ** 2
             acc_feasibility_grad[:, 2:][ge_max_acc_mask] += 2 * (acc_ge_max_acc - max_acc) / knot_dt ** 2
 
             # extra "/ knot_dt ** 2": from ego_planner, to make vel and acc have similar magnitudes
-            feasibility_loss = torch.sum(vel_feasibility_loss / knot_dt ** 2) + torch.sum(acc_feasibility_loss)
-            feasibility_loss /= batch_size
             feasibility_grad = vel_feasibility_grad / knot_dt ** 2 + acc_feasibility_grad
 
-        loss = optimization_params.lambda_smoothness * smoothness_loss + \
-               optimization_params.lambda_collision * collision_loss + \
-               optimization_params.lambda_feasibility * feasibility_loss
         grad = optimization_params.lambda_smoothness * smoothness_grad + \
                optimization_params.lambda_collision * collision_grad + \
                optimization_params.lambda_feasibility * feasibility_grad
@@ -301,7 +292,7 @@ class OptimizationFunc(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, params):
         super(Decoder, self).__init__()
-        self.opt_func = OptimizationFunc(params)
+        self.opt_func = OptimizationFunc(params).to(params.device)
         opt_params = params.optimization_params
         self.t = np.linspace(0, opt_params.ode_t_end, opt_params.ode_num_timestamps).astype(np.float32)
         self.t = torch.from_numpy(self.t).to(params.device)
@@ -357,7 +348,7 @@ class Hallucination(nn.Module):
 
         # initial traj before optimization, straight line from start to goal, (batch_size, num_control_pts, Dy)
         init_control_pts = reference_pts[:, None, 0] + \
-                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None] * \
+                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None].to(self.params.device) * \
                            (reference_pts[:, None, -1] - reference_pts[:, None, 0])
         recon_control_points = self.decoder(init_control_pts, loc, size, reference_pts)
 
@@ -380,6 +371,7 @@ class Hallucination(nn.Module):
         :param size: (batch_size, num_obs, Dy) tensor
         :return:
         """
+        device = self.params.device
         # reconstruction error
         recon_loss = torch.mean(torch.sum((traj - recon_traj) ** 2, dim=(1, 2)))
 
@@ -395,12 +387,12 @@ class Hallucination(nn.Module):
         repulsive_loss = -torch.mean(torch.sum(obs_distance ** 2, dim=(1, 2)))
         repulsive_loss *= self.params.model_params.lambda_repulsion
 
-        size_var = torch.exp(size_log_var)                              # (batch_size, num_obs, Dy)
-        size_cov = torch.eye(self.params.Dy) * size_var[:, :, None, :]  # (batch_size, num_obs, Dy, Dy)
+        size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
+        size_cov = torch.eye(self.params.Dy).to(device) * size_var[:, :, None, :]   # (batch_size, num_obs, Dy, Dy)
         size_posterior = torch.distributions.MultivariateNormal(size_mu, size_cov)
 
-        size_prior_mu = self.params.model_params.obs_size_prior_mu * torch.ones(self.params.Dy)
-        size_prior_var = self.params.model_params.obs_size_prior_var * torch.eye(self.params.Dy)
+        size_prior_mu = self.params.model_params.obs_size_prior_mu * torch.ones(self.params.Dy).to(device)
+        size_prior_var = self.params.model_params.obs_size_prior_var * torch.eye(self.params.Dy).to(device)
         size_prior = torch.distributions.MultivariateNormal(size_prior_mu, size_prior_var)
 
         kl_loss = torch.distributions.kl_divergence(size_posterior, size_prior)     # (batch_size, num_obs)
@@ -412,6 +404,7 @@ class Hallucination(nn.Module):
         return loss, (recon_loss, repulsive_loss, kl_loss)
 
     def test(self, full_traj, reference_pts):
+        device = self.params.device
         batch_size = full_traj.size(0)
         idx = np.random.randint(batch_size)
         full_traj = full_traj[idx:idx + 1]
@@ -421,7 +414,7 @@ class Hallucination(nn.Module):
         _, _, loc, _, _, size = self.encoder(full_traj)
         # initial traj before optimization, straight line from start to goal, (1, num_control_pts, Dy)
         init_control_pts = reference_pts[:, None, 0] + \
-                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None] * \
+                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None].to(device) * \
                            (reference_pts[:, None, -1] - reference_pts[:, None, 0])
 
         decoder = self.decoder
