@@ -384,7 +384,8 @@ class Hallucination(nn.Module):
                                                                                     # (batch_size, num_obs, num_obs)
         obs_distance = torch.norm(loc_diff, dim=-1) - \
                        (radius_along_direction + torch.transpose(radius_along_direction, 1, 2))
-        repulsive_loss = -torch.mean(torch.sum(obs_distance ** 2, dim=(1, 2)))
+        repulsive_loss = -obs_distance / 2
+        repulsive_loss = torch.mean(torch.sum(repulsive_loss, dim=(1, 2)))
         repulsive_loss *= self.params.model_params.lambda_repulsion
 
         size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
