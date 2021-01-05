@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchdiffeq import odeint_adjoint as odeint
+# from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint
 
 EPS = 1e-6
 
@@ -292,6 +293,7 @@ class OptimizationFunc(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, params):
         super(Decoder, self).__init__()
+        self.device = params.device
         self.opt_func = OptimizationFunc(params).to(params.device)
         opt_params = params.optimization_params
         self.t = np.linspace(0, opt_params.ode_t_end, opt_params.ode_num_timestamps).astype(np.float32)
@@ -301,8 +303,8 @@ class Decoder(nn.Module):
         self.opt_func.update(obs_loc, obs_size, reference_pts)
         size = init_control_pts.size()
         init_control_pts = init_control_pts.view(init_control_pts.size(0), -1)
-        recon_control_points = \
-            odeint(self.opt_func, init_control_pts, self.t)     # (ode_num_timestamps, batch_size, num_control_pts * Dy)
+        recon_control_points = odeint(self.opt_func, init_control_pts, self.t).to(self.device)
+                                                                # (ode_num_timestamps, batch_size, num_control_pts * Dy)
         recon_control_points = recon_control_points[-1].view(size)  # (batch_size, num_control_pts, Dy)
         return recon_control_points
 

@@ -88,7 +88,7 @@ def train(params):
             recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size = \
                 model(full_traj, reference_pts, decode=True)
             loss, (recon_loss, repulsive_loss, kl_loss) = \
-                model.loss(recon_traj, traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
+                model.loss(traj, recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
             loss.backward()
             optimizer.step()
             losses.append(loss.item())
