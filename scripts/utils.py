@@ -33,6 +33,7 @@ def plot_ode_opt(writer, model, full_traj, reference_pts, epoch):
         opt_axes[i].axis('equal')
         opt_axes[i].set_xlabel("x")
         opt_axes[i].set_ylabel("y")
+        opt_axes[i].legend()
 
     loss_fig.tight_layout()
     opt_fig.tight_layout()
