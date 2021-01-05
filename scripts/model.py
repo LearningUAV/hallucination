@@ -48,8 +48,8 @@ class Encoder(nn.Module):
         size_mu = output[:, :, 2]
         size_log_var = output[:, :, 3]
 
-        loc_log_var = torch.clamp(loc_log_var, min=EPS)
-        size_log_var = torch.clamp(size_log_var, min=EPS)
+        loc_log_var = torch.clamp(loc_log_var, min=np.log(EPS))
+        size_log_var = torch.clamp(size_log_var, min=np.log(EPS))
 
         loc = self.reparameterize(loc_mu, loc_log_var)
         size = torch.log(1 + torch.exp(self.reparameterize(size_mu, size_log_var)))
