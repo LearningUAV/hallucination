@@ -391,14 +391,18 @@ class Hallucination(nn.Module):
         repulsive_loss *= self.params.model_params.lambda_repulsion
 
         size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
-        size_cov = torch.eye(self.params.Dy).to(device) * size_var[:, :, None, :]   # (batch_size, num_obs, Dy, Dy)
-        size_posterior = torch.distributions.MultivariateNormal(size_mu, size_cov)
 
         size_prior_mu = self.params.model_params.obs_size_prior_mu * torch.ones(self.params.Dy).to(device)
-        size_prior_var = self.params.model_params.obs_size_prior_var * torch.eye(self.params.Dy).to(device)
-        size_prior = torch.distributions.MultivariateNormal(size_prior_mu, size_prior_var)
+        size_prior_var = self.params.model_params.obs_size_prior_var * torch.ones(self.params.Dy).to(device)
+        size_prior_mu = size_prior_mu[None, None, :]                                # (1, 1, Dy)
+        size_prior_var = size_prior_var[None, None, :]
 
-        kl_loss = torch.distributions.kl_divergence(size_posterior, size_prior)     # (batch_size, num_obs)
+        # kl divergence between two diagonal Gaussian
+        kl_loss = 0.5 * (torch.sum(size_var / size_prior_var
+                                   + (size_mu - size_prior_mu) ** 2 / size_prior_var
+                                   + torch.log(size_prior_var) - torch.log(size_var),
+                                   dim=-1)
+                         - self.params.Dy)
         kl_loss = torch.mean(torch.sum(kl_loss, dim=1))
         kl_loss *= self.params.model_params.lambda_kl
 
