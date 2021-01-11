@@ -87,10 +87,7 @@ class HallucinationDataset(Dataset):
 
         r = R.from_quat(ori_base).inv()
         pos_transformed = r.apply(pos_full_traj - pos_base)
-        vel_transformed = np.zeros_like(pos_transformed)
-        for i, (vel, ori) in enumerate(zip(vel_full_traj, ori_full_traj)):
-            r_loc = R.from_quat(ori)
-            vel_transformed[i] = r.apply(r_loc.apply(vel))
+        vel_transformed = r.apply(vel_full_traj)
 
         if self.Dy == 2:
             pos_transformed = pos_transformed[:, :2]
