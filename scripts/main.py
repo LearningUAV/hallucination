@@ -74,10 +74,12 @@ def train(params):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
+    lambda_kl_final = params.model_params.lambda_kl
     for epoch in range(training_params.epochs):
         losses = []
         recon_losses, repulsive_losses, kl_losses = [], [], []
         model.train(training=True)
+        params.model_params.lambda_kl = lambda_kl_final * epoch / training_params.epochs
         for i_batch, sample_batched in enumerate(dataloader):
             # get the inputs; data is a list of [inputs, labels]
             full_traj = sample_batched["full_traj"]
