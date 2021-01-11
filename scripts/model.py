@@ -40,7 +40,7 @@ class Encoder(nn.Module):
             output = F.leaky_relu(conv1d_layer(output))
         output = output.view(output.size(0), -1)
         output = self.fc(output)
-        output = self.ln(output)
+        # output = self.ln(output)
         output = output.view(output.size(0), self.model_params.num_obs, 4, self.params.Dy)
 
         loc_mu = output[:, :, 0]
@@ -384,11 +384,15 @@ class Hallucination(nn.Module):
         loc_diff_norm = torch.clamp(torch.norm(loc_diff, dim=-1, keepdim=True), min=EPS)
         loc_diff_direction = loc_diff / loc_diff_norm                               # (batch_size, num_obs, num_obs, Dy)
         size_ = size[:, None, :]                                                    # (batch_size, 1, num_obs, Dy)
-        radius_along_direction = 1 / torch.sqrt(torch.sum(loc_diff_direction ** 2 / size_ ** 2, dim=-1))
-                                                                                    # (batch_size, num_obs, num_obs)
+        tmp = torch.sqrt(torch.sum(loc_diff_direction ** 2 / size_ ** 2, dim=-1))   # (batch_size, num_obs, num_obs)
+        tmp = torch.clamp(tmp, min=EPS)
+        radius_along_direction = 1 / tmp                                            # (batch_size, num_obs, num_obs)
+        radius_along_direction[radius_along_direction == 1 / EPS] = 0
+
         radius_along_direction[torch.logical_not(torch.isfinite(radius_along_direction))] = 0
         obs_distance = loc_diff_norm[:, :, :, 0] - \
                        (radius_along_direction + torch.transpose(radius_along_direction, 1, 2))
+        obs_distance = loc_diff_norm[:, :, :, 0]
         repulsive_loss = -obs_distance / 2
         repulsive_loss = torch.mean(torch.sum(repulsive_loss, dim=(1, 2)))
         repulsive_loss *= self.params.model_params.lambda_repulsion
@@ -408,20 +412,21 @@ class Hallucination(nn.Module):
         size_prior_var = size_prior_var[None, None, :]
 
         # kl divergence between two diagonal Gaussian
-        kl_loss = 0.5 * (torch.sum(loc_var / loc_prior_var
-                                   + (loc_mu - loc_prior_mu) ** 2 / loc_prior_var
-                                   + torch.log(loc_prior_var) - torch.log(loc_var),
-                                   dim=-1)
-                         - self.params.Dy) + \
-                  0.5 * (torch.sum(size_var / size_prior_var
-                                   + (size_mu - size_prior_mu) ** 2 / size_prior_var
-                                   + torch.log(size_prior_var) - torch.log(size_var),
-                                   dim=-1)
-                         - self.params.Dy)
-        kl_loss = torch.mean(torch.sum(kl_loss, dim=1))
+        loc_kl_loss = 0.5 * (torch.sum(loc_var / loc_prior_var
+                                       + (loc_mu - loc_prior_mu) ** 2 / loc_prior_var
+                                       + torch.log(loc_prior_var) - torch.log(loc_var),
+                                       dim=-1)
+                             - self.params.Dy)
+        size_kl_loss = 0.5 * (torch.sum(size_var / size_prior_var
+                                        + (size_mu - size_prior_mu) ** 2 / size_prior_var
+                                        + torch.log(size_prior_var) - torch.log(size_var),
+                                        dim=-1)
+                              - self.params.Dy)
+        kl_loss = torch.mean(torch.sum(loc_kl_loss + size_kl_loss, dim=1))
         kl_loss *= self.params.model_params.lambda_kl
 
         loss = recon_loss + repulsive_loss + kl_loss
+        batch_size = self.params.training_params.batch_size
 
         return loss, (recon_loss, repulsive_loss, kl_loss)
 
