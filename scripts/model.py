@@ -374,21 +374,31 @@ class Hallucination(nn.Module):
         :return:
         """
         device = self.params.device
+        num_obs = self.params.model_params.num_obs
         # reconstruction error
         recon_loss = torch.mean(torch.sum((traj - recon_traj) ** 2, dim=(1, 2)))
 
         # regularization loss
-        loc_diff = loc[:, :, None] - loc[:, None, :]                                # (batch_size, num_obs, num_obs, Dy)
-        loc_diff = torch.clamp(loc_diff, min=EPS)
-        loc_diff_direction = loc_diff / torch.norm(loc_diff, dim=-1, keepdim=True)  # (batch_size, num_obs, num_obs, Dy)
+        loc_diff = torch.cat([loc[:, :, None] * num_obs], dim=2) - torch.cat([loc[:, None] * num_obs], dim=1)
+                                                                                    # (batch_size, num_obs, num_obs, Dy)
+        loc_diff_norm = torch.clamp(torch.norm(loc_diff, dim=-1, keepdim=True), min=EPS)
+        loc_diff_direction = loc_diff / loc_diff_norm                               # (batch_size, num_obs, num_obs, Dy)
         size_ = size[:, None, :]                                                    # (batch_size, 1, num_obs, Dy)
         radius_along_direction = 1 / torch.sqrt(torch.sum(loc_diff_direction ** 2 / size_ ** 2, dim=-1))
                                                                                     # (batch_size, num_obs, num_obs)
-        obs_distance = torch.norm(loc_diff, dim=-1) - \
+        radius_along_direction[torch.logical_not(torch.isfinite(radius_along_direction))] = 0
+        obs_distance = loc_diff_norm[:, :, :, 0] - \
                        (radius_along_direction + torch.transpose(radius_along_direction, 1, 2))
         repulsive_loss = -obs_distance / 2
         repulsive_loss = torch.mean(torch.sum(repulsive_loss, dim=(1, 2)))
         repulsive_loss *= self.params.model_params.lambda_repulsion
+
+        loc_var = torch.exp(loc_log_var)                                            # (batch_size, num_obs, Dy)
+
+        loc_prior_mu = self.params.model_params.obs_loc_prior_mu * torch.ones(self.params.Dy).to(device)
+        loc_prior_var = self.params.model_params.obs_loc_prior_var * torch.ones(self.params.Dy).to(device)
+        loc_prior_mu = loc_prior_mu[None, None, :]                                  # (1, 1, Dy)
+        loc_prior_var = loc_prior_var[None, None, :]
 
         size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
 
@@ -398,7 +408,12 @@ class Hallucination(nn.Module):
         size_prior_var = size_prior_var[None, None, :]
 
         # kl divergence between two diagonal Gaussian
-        kl_loss = 0.5 * (torch.sum(size_var / size_prior_var
+        kl_loss = 0.5 * (torch.sum(loc_var / loc_prior_var
+                                   + (loc_mu - loc_prior_mu) ** 2 / loc_prior_var
+                                   + torch.log(loc_prior_var) - torch.log(loc_var),
+                                   dim=-1)
+                         - self.params.Dy) + \
+                  0.5 * (torch.sum(size_var / size_prior_var
                                    + (size_mu - size_prior_mu) ** 2 / size_prior_var
                                    + torch.log(size_prior_var) - torch.log(size_var),
                                    dim=-1)
