@@ -296,16 +296,17 @@ class Decoder(nn.Module):
         self.device = params.device
         self.opt_func = OptimizationFunc(params).to(params.device)
         opt_params = params.optimization_params
+        self.ode_num_timestamps = opt_params.ode_num_timestamps
         self.t = np.linspace(0, opt_params.ode_t_end, opt_params.ode_num_timestamps).astype(np.float32)
         self.t = torch.from_numpy(self.t).to(params.device)
 
     def forward(self, init_control_pts, obs_loc, obs_size, reference_pts):
         self.opt_func.update(obs_loc, obs_size, reference_pts)
-        size = init_control_pts.size()
+        batch_size, num_control_pts, Dy = init_control_pts.size()
         init_control_pts = init_control_pts.view(init_control_pts.size(0), -1)
         recon_control_points = odeint(self.opt_func, init_control_pts, self.t).to(self.device)
                                                                 # (ode_num_timestamps, batch_size, num_control_pts * Dy)
-        recon_control_points = recon_control_points[-1].view(size)  # (batch_size, num_control_pts, Dy)
+        recon_control_points = recon_control_points.view(self.ode_num_timestamps, batch_size, num_control_pts, Dy)
         return recon_control_points
 
 
@@ -355,10 +356,10 @@ class Hallucination(nn.Module):
         recon_control_points = self.decoder(init_control_pts, loc, size, reference_pts)
 
         # (batch_size, 1, num_control_pts, 3)
-        recon_control_points = recon_control_points.view(-1, 1, model_params.num_control_pts, self.params.Dy)
-        recon_traj = torch.matmul(self.coef, recon_control_points)
+        last_recon_control_points = recon_control_points[-1, :, None]
+        recon_traj = torch.matmul(self.coef, last_recon_control_points)
 
-        return recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+        return recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size, recon_control_points
 
     def loss(self, traj, recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
         """
@@ -425,44 +426,25 @@ class Hallucination(nn.Module):
         kl_loss = torch.mean(torch.sum(loc_kl_loss + size_kl_loss, dim=1))
         kl_loss *= self.params.model_params.lambda_kl
 
-        loss = recon_loss + repulsive_loss + kl_loss
+        loss = recon_loss + kl_loss + repulsive_loss
         batch_size = self.params.training_params.batch_size
 
         return loss, (recon_loss, repulsive_loss, kl_loss)
 
-    def test(self, full_traj, reference_pts):
-        device = self.params.device
-        batch_size = full_traj.size(0)
-        idx = np.random.randint(batch_size)
-        full_traj = full_traj[idx:idx + 1]
-        reference_pts = reference_pts[idx:idx + 1]
-
-        model_params = self.model_params
-        _, _, loc, _, _, size = self.encoder(full_traj)
-        # initial traj before optimization, straight line from start to goal, (1, num_control_pts, Dy)
-        init_control_pts = reference_pts[:, None, 0] + \
-                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None].to(device) * \
-                           (reference_pts[:, None, -1] - reference_pts[:, None, 0])
-
-        decoder = self.decoder
-        opt_func = decoder.opt_func
+    def test(self, reference_pts, recon_control_points, loc, size):
+        opt_func = self.decoder.opt_func
         opt_func.update(loc, size, reference_pts)
-        init_control_pts = init_control_pts.view(init_control_pts.size(0), -1)
-        # (ode_num_timestamps, 1, num_control_pts * Dy)
-        recon_control_points = odeint(decoder.opt_func, init_control_pts, decoder.t)
-        ode_num_timestamps = recon_control_points.size(0)
-        losses = []
+        ode_num_timestamps, batch_size, num_control_pts, Dy = recon_control_points.size()
+
+        losses = np.zeros((batch_size, ode_num_timestamps))
         for i in range(ode_num_timestamps):
-            loss = opt_func.loss(recon_control_points[i])
-            losses.append(loss.item())
-        losses = np.stack(losses)
+            for j in range(batch_size):
+                losses[j, i] = opt_func.loss(recon_control_points[i, j].view(1, num_control_pts * Dy)).item()
 
-        loc = loc[0].cpu().detach().numpy()
-        size = size[0].cpu().detach().numpy()
-        recon_control_points = recon_control_points[:, 0].view(ode_num_timestamps, -1, self.params.Dy)
+        loc = loc.cpu().detach().numpy()
+        size = size.cpu().detach().numpy()
         recon_control_points = recon_control_points.cpu().detach().numpy()
-
-        reference_pts = reference_pts[0].cpu().detach().numpy()
+        reference_pts = reference_pts.cpu().detach().numpy()
 
         return reference_pts, loc, size, recon_control_points, losses
 
