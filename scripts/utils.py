@@ -46,3 +46,52 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
     writer.add_figure("ODE_opt/loss", loss_fig, epoch)
     writer.add_figure("ODE_opt/result", opt_fig, epoch)
     plt.close("all")
+
+
+def plot_obs_dist(writer, reference_pts, recon_control_points,
+                  loc_mu, loc_log_var, loc, size_mu, size_log_var, size,
+                  epoch):
+    batch_size = reference_pts.size(0)
+    idx = np.random.randint(batch_size - 3)
+
+    reference_pts = reference_pts[idx:idx + 3].cpu().detach().numpy()
+    recon_control_points = recon_control_points[:, idx:idx + 3].cpu().detach().numpy()
+    loc_mu = loc_mu[idx:idx + 3].cpu().detach().numpy()
+    loc_log_var = loc_log_var[idx:idx + 3].cpu().detach().numpy()
+    loc_std = np.exp(0.5 * loc_log_var)
+    size_mu = size_mu[idx:idx + 3].cpu().detach().numpy()
+    size_log_var = size_log_var[idx:idx + 3].cpu().detach().numpy()
+    size_std = np.exp(0.5 * size_log_var)
+    loc = loc[idx:idx + 3].cpu().detach().numpy()
+    size = size[idx:idx + 3].cpu().detach().numpy()
+
+    dist_fig, dist_axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    def softplus(a):
+        return np.log(1 + np.exp(a))
+
+    for i in range(3):
+        obs_loc = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+                   for loc_, size_ in zip(loc_mu[i], loc_std[i])]
+        obs_size_mu = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+                       for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i]))]
+        obs_size_s = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+                      for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] - size_std[i]))]
+        obs_size_l = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+                      for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] + size_std[i]))]
+        for loc_, size_mu_, size_s, size_l in zip(obs_loc, obs_size_mu, obs_size_s, obs_size_l):
+            edge_c = np.random.rand(3)
+            dist_axes[i].add_artist(loc_)
+            dist_axes[i].add_artist(size_mu_)
+            dist_axes[i].add_artist(size_s)
+            dist_axes[i].add_artist(size_l)
+            loc_.set_edgecolor(edge_c)
+            size_mu_.set_edgecolor(edge_c)
+            size_s.set_edgecolor(edge_c)
+            size_l.set_edgecolor(edge_c)
+            loc_.set_linestyle('--')
+        dist_axes[i].set(xlim=[-10, 10], ylim=[-10, 10])
+
+    dist_fig.tight_layout()
+    writer.add_figure("ODE_opt/dist", dist_fig, epoch)
+    plt.close("all")
