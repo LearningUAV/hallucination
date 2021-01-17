@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# from torchdiffeq import odeint_adjoint as odeint
-from torchdiffeq import odeint
+from torchdiffeq import odeint, odeint_adjoint, odeint_event
 
 EPS = 1e-6
 
@@ -66,13 +65,16 @@ class OptimizationFunc(nn.Module):
         self.direction = None
         self.intersection = None
         self.SECOND_DERIVATIVE_CONTINOUS = False
+        self.prev_loss = None
 
-    def update(self, obs_loc, obs_size, reference_pts):
+    def update(self, obs_loc, obs_size, reference_pts, init_control_pts):
         """
         :param obs_loc: (B, num_obs, Dy) tensor
         :param obs_size: (B, num_obs, Dy) tensor
         :param reference_pts:  (B, num_control_pts, Dy) tensor
             pos on collected trajectory, used as the guidance for control points to get out of obstacles
+        :param init_control_pts:  (B, num_control_pts, Dy) tensor
+            the straight line connecting the start and the end of reference_pts
         :return: 
         """
         self.obs_loc = obs_loc
@@ -90,9 +92,17 @@ class OptimizationFunc(nn.Module):
         t = 1 / torch.sqrt(torch.sum(self.direction ** 2 / obs_size ** 2, dim=-1, keepdim=True))
         self.intersection = obs_loc[:, None] + t * self.direction       # (B, num_control_pts, num_obs, Dy)
 
+        dist = init_control_pts[:, :, None] - self.obs_loc[:, None, :]          # (B, num_control_pts, num_obs, Dy)
+        dist_len = torch.norm(dist, dim=-1)                                     # (B, num_control_pts, num_obs)
+        dist_direction = dist / torch.norm(dist, dim=-1, keepdim=True)          # (B, num_control_pts, num_obs, Dy)
+        radius_along_dir = 1 / torch.sqrt(torch.sum(dist_direction ** 2 / self.obs_size[:, None, :] ** 2, dim=-1))
+                                                                                # (B, num_control_pts, num_obs)
+        self.in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
+
+        self.prev_loss = None
+
     def loss(self, control_pts):
         params = self.params
-        device = params.device
         model_params = params.model_params
         optimization_params = params.optimization_params
         batch_size = control_pts.size(0)
@@ -105,7 +115,7 @@ class OptimizationFunc(nn.Module):
         # https://github.com/ZJU-FAST-Lab/ego-planner/blob/master/src/planner/bspline_opt/src/bspline_optimizer.cpp#L413-L452
         vel = (control_pts[:, 1:] - control_pts[:, :-1])                    # (B, num_control_pts - 1, Dy)
         acc = (vel[:, 1:] - vel[:, :-1])                                    # (B, num_control_pts - 2, Dy)
-        jerk = (acc[:, 1:] - acc[:, :-1])                                    # (B, num_control_pts - 2, Dy)
+        jerk = (acc[:, 1:] - acc[:, :-1])                                   # (B, num_control_pts - 2, Dy)
 
         smoothness_loss = torch.mean(torch.sum(jerk ** 2, dim=(1, 2)))
 
@@ -119,8 +129,8 @@ class OptimizationFunc(nn.Module):
         dist = torch.sum((control_pts_ - self.intersection) * self.direction, dim=-1)
         clearance = optimization_params.clearance
         dist_error = clearance - dist
-        gt_0_le_clearance_mask = (dist_error > 0) & (dist_error <= clearance)
-        gt_clearance_mask = dist_error > clearance
+        gt_0_le_clearance_mask = (dist_error > 0) & (dist_error <= clearance) & self.in_collision
+        gt_clearance_mask = (dist_error > clearance) & self.in_collision
         dist_gt_0_le_clearance = dist_error[gt_0_le_clearance_mask]
         dist_gt_clearance = dist_error[gt_clearance_mask]
 
@@ -180,7 +190,7 @@ class OptimizationFunc(nn.Module):
         # https://github.com/ZJU-FAST-Lab/ego-planner/blob/master/src/planner/bspline_opt/src/bspline_optimizer.cpp#L413-L452
         vel = (control_pts[:, 1:] - control_pts[:, :-1])                    # (B, num_control_pts - 1, Dy)
         acc = (vel[:, 1:] - vel[:, :-1])                                    # (B, num_control_pts - 2, Dy)
-        jerk = (acc[:, 1:] - acc[:, :-1])                                    # (B, num_control_pts - 2, Dy)
+        jerk = (acc[:, 1:] - acc[:, :-1])                                   # (B, num_control_pts - 2, Dy)
 
         smoothness_grad = torch.zeros_like(control_pts)
         smoothness_grad[:, :-3] += -1 * 2 * jerk
@@ -199,8 +209,8 @@ class OptimizationFunc(nn.Module):
         dist = torch.sum((control_pts_ - self.intersection) * self.direction, dim=-1)
         clearance = optimization_params.clearance
         dist_error = clearance - dist
-        gt_0_le_clearance_mask = (dist_error > 0) & (dist_error <= clearance)
-        gt_clearance_mask = dist_error > clearance
+        gt_0_le_clearance_mask = (dist_error > 0) & (dist_error <= clearance) & self.in_collision
+        gt_clearance_mask = (dist_error > clearance) & self.in_collision
         dist_gt_0_le_clearance = dist_error[gt_0_le_clearance_mask]
         dist_gt_clearance = dist_error[gt_clearance_mask]
 
@@ -289,6 +299,17 @@ class OptimizationFunc(nn.Module):
 
         return grad
 
+    def loss_decrease(self, t, control_pts):
+        loss = self.loss(control_pts)
+
+        prev_loss = self.prev_loss
+        self.prev_loss = loss
+        if prev_loss is not None:
+            print(loss, prev_loss - loss, prev_loss >= loss)
+            return prev_loss >= loss
+        else:
+            return loss
+
 
 class Decoder(nn.Module):
     def __init__(self, params):
@@ -299,13 +320,21 @@ class Decoder(nn.Module):
         self.ode_num_timestamps = opt_params.ode_num_timestamps
         self.t = np.linspace(0, opt_params.ode_t_end, opt_params.ode_num_timestamps).astype(np.float32)
         self.t = torch.from_numpy(self.t).to(params.device)
+        self.t0 = self.t[0]
 
     def forward(self, init_control_pts, obs_loc, obs_size, reference_pts):
-        self.opt_func.update(obs_loc, obs_size, reference_pts)
+        self.opt_func.update(obs_loc, obs_size, reference_pts, init_control_pts)
         batch_size, num_control_pts, Dy = init_control_pts.size()
         init_control_pts = init_control_pts.view(init_control_pts.size(0), -1)
-        recon_control_points = odeint(self.opt_func, init_control_pts, self.t).to(self.device)
-                                                                # (ode_num_timestamps, batch_size, num_control_pts * Dy)
+
+        # recon_control_points.size(): (ode_num_timestamps, batch_size, num_control_pts * Dy)
+        # recon_control_points = odeint(self.opt_func, init_control_pts, self.t, atol=1e-7, rtol=1e-7).to(self.device)
+        recon_control_points = odeint(self.opt_func, init_control_pts, self.t,
+                                      method='rk4', options=dict(step_size=1.0)).to(self.device)
+        # _, recon_control_points = odeint_event(self.opt_func, init_control_pts, self.t0,
+        #                                        event_fn=self.opt_func.loss_decrease, odeint_interface=odeint,
+        #                                        atol=1e-8, rtol=1e-8)
+
         recon_control_points = recon_control_points.view(self.ode_num_timestamps, batch_size, num_control_pts, Dy)
         return recon_control_points
 
@@ -359,9 +388,9 @@ class Hallucination(nn.Module):
         last_recon_control_points = recon_control_points[-1, :, None]
         recon_traj = torch.matmul(self.coef, last_recon_control_points)
 
-        return recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size, recon_control_points
+        return recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size
 
-    def loss(self, traj, recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
+    def loss(self, traj, recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
         """
 
         :param traj: (batch_size, T, Dy) tensor
@@ -376,26 +405,26 @@ class Hallucination(nn.Module):
         """
         device = self.params.device
         num_obs = self.params.model_params.num_obs
+        batch_size = self.params.training_params.batch_size
         # reconstruction error
         recon_loss = torch.mean(torch.sum((traj - recon_traj) ** 2, dim=(1, 2)))
 
         # regularization loss
-        loc_diff = torch.cat([loc[:, :, None] * num_obs], dim=2) - torch.cat([loc[:, None] * num_obs], dim=1)
-                                                                                    # (batch_size, num_obs, num_obs, Dy)
-        loc_diff_norm = torch.clamp(torch.norm(loc_diff, dim=-1, keepdim=True), min=EPS)
+        loc_diff = loc[:, :, None] - loc[:, None]                                   # (batch_size, num_obs, num_obs, Dy)
+        loc_diff_norm = torch.norm(loc_diff, dim=-1)
+        loc_diff[loc_diff_norm == 0] = 2.0
+
+        loc_diff_norm = torch.norm(loc_diff, dim=-1, keepdim=True)
         loc_diff_direction = loc_diff / loc_diff_norm                               # (batch_size, num_obs, num_obs, Dy)
         size_ = size[:, None, :]                                                    # (batch_size, 1, num_obs, Dy)
         tmp = torch.sqrt(torch.sum(loc_diff_direction ** 2 / size_ ** 2, dim=-1))   # (batch_size, num_obs, num_obs)
-        tmp = torch.clamp(tmp, min=EPS)
         radius_along_direction = 1 / tmp                                            # (batch_size, num_obs, num_obs)
-        radius_along_direction[radius_along_direction == 1 / EPS] = 0
 
-        radius_along_direction[torch.logical_not(torch.isfinite(radius_along_direction))] = 0
-        obs_distance = loc_diff_norm[:, :, :, 0] - \
-                       (radius_along_direction + torch.transpose(radius_along_direction, 1, 2))
-        obs_distance = loc_diff_norm[:, :, :, 0]
-        repulsive_loss = -obs_distance / 2
-        repulsive_loss = torch.mean(torch.sum(repulsive_loss, dim=(1, 2)))
+        # radius_along_direction[torch.logical_not(torch.isfinite(radius_along_direction))] = 0
+        combined_radius_along_direction = radius_along_direction + torch.transpose(radius_along_direction, 1, 2)
+        relative_obs_distance = loc_diff_norm[:, :, :, 0] / combined_radius_along_direction
+        repulsive_loss = (1.1 - relative_obs_distance[relative_obs_distance < 1.1]) ** 3
+        repulsive_loss = torch.sum(repulsive_loss) / batch_size
         repulsive_loss *= self.params.model_params.lambda_repulsion
 
         loc_var = torch.exp(loc_log_var)                                            # (batch_size, num_obs, Dy)
@@ -423,17 +452,25 @@ class Hallucination(nn.Module):
                                         + torch.log(size_prior_var) - torch.log(size_var),
                                         dim=-1)
                               - self.params.Dy)
-        kl_loss = torch.mean(torch.sum(loc_kl_loss + size_kl_loss, dim=1))
+        kl_loss = size_kl_loss # + loc_kl_loss
+        kl_loss = torch.mean(torch.sum(kl_loss, dim=1))
         kl_loss *= self.params.model_params.lambda_kl
 
-        loss = recon_loss + kl_loss + repulsive_loss
-        batch_size = self.params.training_params.batch_size
+        opt_remain_loss = self.decoder.opt_func.loss(recon_control_points[-1])
+        opt_remain_loss *= self.params.model_params.lambda_opt_remain
 
-        return loss, (recon_loss, repulsive_loss, kl_loss)
+        loss = recon_loss + kl_loss + repulsive_loss + opt_remain_loss
+
+        return loss, (recon_loss, repulsive_loss, kl_loss, opt_remain_loss)
 
     def test(self, reference_pts, recon_control_points, loc, size):
+        model_params = self.model_params
         opt_func = self.decoder.opt_func
-        opt_func.update(loc, size, reference_pts)
+        # initial traj before optimization, straight line from start to goal, (batch_size, num_control_pts, Dy)
+        init_control_pts = reference_pts[:, None, 0] + \
+                           torch.linspace(0, 1, model_params.num_control_pts)[None, :, None].to(self.params.device) * \
+                           (reference_pts[:, None, -1] - reference_pts[:, None, 0])
+        opt_func.update(loc, size, reference_pts, init_control_pts)
         ode_num_timestamps, batch_size, num_control_pts, Dy = recon_control_points.size()
 
         losses = np.zeros((batch_size, ode_num_timestamps))

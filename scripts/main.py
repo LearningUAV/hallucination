@@ -12,7 +12,7 @@ import torchvision.transforms as transforms
 
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
-from utils import plot_ode_opt
+from utils import plot_ode_opt, plot_obs_dist
 
 
 class AttrDict(dict):
@@ -79,7 +79,7 @@ def train(params):
     lambda_repulsion_final = model_params.lambda_repulsion
     for epoch in range(training_params.epochs):
         losses = []
-        recon_losses, repulsive_losses, kl_losses = [], [], []
+        recon_losses, repulsive_losses, kl_losses, opt_remain_losses = [], [], [], []
         model.train(training=True)
         params.model_params.lambda_kl = lambda_kl_final * (epoch + 1) / model_params.lambda_annealing
         params.model_params.lambda_repulsion = lambda_repulsion_final * (epoch + 1) / model_params.lambda_annealing
@@ -90,14 +90,15 @@ def train(params):
             traj = sample_batched["traj"]
 
             optimizer.zero_grad()
-            recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size, recon_control_points = \
+            recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size = \
                 model(full_traj, reference_pts, decode=True)
-            loss, (recon_loss, repulsive_loss, kl_loss) = \
-                model.loss(traj, recon_traj, loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
+            loss, (recon_loss, repulsive_loss, kl_loss, opt_remain_loss) = \
+                model.loss(traj, recon_traj, recon_control_points,
+                           loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
             loss.backward()
-            # print(recon_loss, repulsive_loss, kl_loss)
+            print(recon_loss, repulsive_loss, kl_loss, opt_remain_loss)
             # for n, p in model.encoder.named_parameters():
-            #     print(n, p.grad[0, :3, :3])
+            #     print(n, p.grad[0, 0, :3])
             #     break
             optimizer.step()
             losses.append(loss.item())
@@ -105,8 +106,13 @@ def train(params):
             recon_losses.append(recon_loss.item())
             repulsive_losses.append(repulsive_loss.item())
             kl_losses.append(kl_loss.item())
+            opt_remain_losses.append(opt_remain_loss.item())
 
-            # plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, i_batch)
+            if (i_batch + epoch * len(dataloader)) % 10 == 0:
+                plot_ode_opt(writer, model, reference_pts, recon_control_points,
+                             loc, size, i_batch + epoch * len(dataloader))
+                plot_obs_dist(writer, reference_pts, recon_control_points,
+                              loc_mu, loc_log_var, loc, size_mu, size_log_var, size, i_batch + epoch * len(dataloader))
             print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs, i_batch + 1, len(dataloader)))
 
         if writer is not None:
@@ -114,6 +120,7 @@ def train(params):
             writer.add_scalar("train/recon_loss", np.mean(recon_losses), epoch)
             writer.add_scalar("train/repulsive_loss", np.mean(repulsive_losses), epoch)
             writer.add_scalar("train/kl_loss", np.mean(kl_losses), epoch)
+            writer.add_scalar("train/opt_remain_loss", np.mean(opt_remain_losses), epoch)
 
             model.train(training=False)
             plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, epoch)
