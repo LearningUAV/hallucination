@@ -1,6 +1,6 @@
 data/sober_rv4
 rslts
-test.py
+test*.py
 .idea
 ode_demo.py
 
