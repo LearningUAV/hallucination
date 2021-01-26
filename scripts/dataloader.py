@@ -118,5 +118,5 @@ class ToTensor(object):
             if key == "full_traj":
                 val = val.transpose((1, 0))  # as torch conv is channel first
             val = val.astype(np.float32)
-            new_data[key] = torch.from_numpy(val).to(self.device)
+            new_data[key] = torch.from_numpy(val)
         return new_data
