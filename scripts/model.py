@@ -124,10 +124,8 @@ class Hallucination(nn.Module):
         :param size: (batch_size, num_obs, Dy) tensor
         :return:
         """
-        Dy = self.params.Dy
+        batch_size, _, Dy = reference_pts.size()
         device = self.params.device
-        Dy = self.params.Dy
-        batch_size = self.params.training_params.batch_size
 
         # reconstruction error
         recon_loss = torch.mean(torch.sum((traj - recon_traj) ** 2, dim=(1, 2)))

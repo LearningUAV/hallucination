@@ -9,7 +9,10 @@ def to_numpy(tensor):
 
 def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, epoch):
     batch_size = reference_pts.size(0)
-    idx = np.random.randint(batch_size - 3)
+    if batch_size <= 3:
+        idx = 0
+    else:
+        idx = np.random.randint(batch_size - 3)
 
     reference_pts = reference_pts[idx:idx + 3]
     recon_control_points = recon_control_points[:, idx:idx + 3]
@@ -54,7 +57,10 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
 
 def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
     batch_size = reference_pts.size(0)
-    idx = np.random.randint(batch_size - 3)
+    if batch_size <= 3:
+        idx = 0
+    else:
+        idx = np.random.randint(batch_size - 3)
 
     reference_pts = reference_pts[idx:idx + 3]
     recon_control_points = recon_control_points[:, idx:idx + 3]
@@ -107,8 +113,10 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
 def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, epoch):
     batch_size = full_traj.size(0)
     Dy = loc_mu.size(-1)
-    print(Dy)
-    idx = np.random.randint(batch_size - 3)
+    if batch_size <= 3:
+        idx = 0
+    else:
+        idx = np.random.randint(batch_size - 3)
 
     full_traj = to_numpy(full_traj[idx:idx + 3, :Dy])
     loc_prior_mu = np.mean(full_traj, axis=-1)

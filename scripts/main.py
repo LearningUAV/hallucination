@@ -78,13 +78,16 @@ def train(params):
     lambda_loc_kl_final = model_params.lambda_loc_kl
     lambda_size_kl_final = model_params.lambda_size_kl
     lambda_mutual_repulsion_final = model_params.lambda_mutual_repulsion
+    lambda_reference_repulsion_final = model_params.lambda_reference_repulsion
     lambda_annealing_steps = model_params.lambda_annealing_steps
     for epoch in range(training_params.epochs):
         loss_details = []
         model.train(training=True)
-        model_params.lambda_loc_kl = lambda_loc_kl_final * (epoch + 1) / lambda_annealing_steps
-        model_params.lambda_size_kl = lambda_size_kl_final * (epoch + 1) / lambda_annealing_steps
-        model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * (epoch + 1) / lambda_annealing_steps
+        annealing_coef = (epoch + 1.) / lambda_annealing_steps
+        model_params.lambda_loc_kl = lambda_loc_kl_final * annealing_coef
+        model_params.lambda_size_kl = lambda_size_kl_final * annealing_coef
+        model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * annealing_coef
+        model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * annealing_coef
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
@@ -113,7 +116,7 @@ def train(params):
         if writer is not None:
             # list of dict to dict of list
             loss_details = {k: [dic[k] for dic in loss_details] for k in loss_details[0]}
-            for k, v in loss_details:
+            for k, v in loss_details.items():
                 writer.add_scalar("train/{}".format(k), np.mean(v), epoch)
 
         if (epoch + 1) % training_params.saving_freq == 0:
