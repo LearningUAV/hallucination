@@ -67,7 +67,7 @@ class HallucinationDataset(Dataset):
         self.odom_mapper = np.array(self.odom_mapper)
 
     def __len__(self):
-        return len(self.traj_mapper)
+        return len(self.traj_mapper) // self.full_traj_len
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
