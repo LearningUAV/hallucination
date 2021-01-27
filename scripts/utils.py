@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 
+def to_numpy(tensor):
+    return tensor.cpu().detach().numpy()
+
+
 def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, epoch):
     batch_size = reference_pts.size(0)
     idx = np.random.randint(batch_size - 3)
@@ -57,12 +61,12 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
     loc = loc[idx:idx + 3]
     size = size[idx:idx + 3]
 
-    loc = loc.cpu().detach().numpy()
-    size = size.cpu().detach().numpy()
-    recon_control_points = recon_control_points.cpu().detach().numpy()
-    reference_pts = reference_pts.cpu().detach().numpy()
+    loc = to_numpy(loc)
+    size = to_numpy(size)
+    recon_control_points = to_numpy(recon_control_points)
+    reference_pts = to_numpy(reference_pts)
 
-    opt_fig, opt_axes = plt.subplots(1, 3, figsize=(18, 6))
+    opt_fig, opt_axes = plt.subplots(1, 3, figsize=(15, 5))
     for i in range(3):
         opt_axes[i].plot(reference_pts[i, :, 0], reference_pts[i, :, 1], label="reference")
         opt_axes[i].scatter(reference_pts[i, :, 0], reference_pts[i, :, 1])
@@ -78,39 +82,57 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
             opt_axes[i].plot(recon_control_points[j, i, :, 0], recon_control_points[j, i, :, 1],
                              label="opt_{}".format(j))
             opt_axes[i].scatter(recon_control_points[j, i, :, 0], recon_control_points[j, i, :, 1])
+
+        x_min = np.minimum(np.min(reference_pts[i, :, 0]), np.min(recon_control_points[:, i, :, 0]))
+        x_max = np.maximum(np.max(reference_pts[i, :, 0]), np.max(recon_control_points[:, i, :, 0]))
+        y_min = np.minimum(np.min(reference_pts[i, :, 1]), np.min(recon_control_points[:, i, :, 1]))
+        y_max = np.maximum(np.max(reference_pts[i, :, 1]), np.max(recon_control_points[:, i, :, 1]))
+        x_mid, y_mid = (x_max + x_min) / 2, (y_max + y_min) / 2
+        x_range, y_range = x_max - x_min, y_max - y_min
+        x_min, x_max = x_mid - x_range, x_mid + x_range
+        y_min, y_max = y_mid - y_range, y_mid + y_range
+
         opt_axes[i].axis('equal')
         opt_axes[i].set_xlabel("x")
         opt_axes[i].set_ylabel("y")
+
+        opt_axes[i].set(xlim=[x_min, x_max], ylim=[y_min, y_max])
         opt_axes[i].legend()
 
     opt_fig.tight_layout()
-    writer.add_figure("ODE_opt/result", opt_fig, epoch)
+    writer.add_figure("sample", opt_fig, epoch)
     plt.close("all")
 
 
-def plot_obs_dist(writer, reference_pts, recon_control_points,
-                  loc_mu, loc_log_var, loc, size_mu, size_log_var, size,
-                  epoch):
-    batch_size = reference_pts.size(0)
+def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, epoch):
+    batch_size = full_traj.size(0)
+    Dy = loc_mu.size(-1)
+    print(Dy)
     idx = np.random.randint(batch_size - 3)
 
-    reference_pts = reference_pts[idx:idx + 3].cpu().detach().numpy()
-    recon_control_points = recon_control_points[:, idx:idx + 3].cpu().detach().numpy()
-    loc_mu = loc_mu[idx:idx + 3].cpu().detach().numpy()
-    loc_log_var = loc_log_var[idx:idx + 3].cpu().detach().numpy()
+    full_traj = to_numpy(full_traj[idx:idx + 3, :Dy])
+    loc_prior_mu = np.mean(full_traj, axis=-1)
+    loc_prior_var = np.var(full_traj, axis=-1) * params.model_params.obs_loc_prior_var_coef
+    loc_prior_std = np.sqrt(loc_prior_var)
+    loc_mu = to_numpy(loc_mu[idx:idx + 3])
+    loc_log_var = to_numpy(loc_log_var[idx:idx + 3])
     loc_std = np.exp(0.5 * loc_log_var)
-    size_mu = size_mu[idx:idx + 3].cpu().detach().numpy()
-    size_log_var = size_log_var[idx:idx + 3].cpu().detach().numpy()
+    size_mu = to_numpy(size_mu[idx:idx + 3])
+    size_log_var = to_numpy(size_log_var[idx:idx + 3])
     size_std = np.exp(0.5 * size_log_var)
-    loc = loc[idx:idx + 3].cpu().detach().numpy()
-    size = size[idx:idx + 3].cpu().detach().numpy()
 
-    dist_fig, dist_axes = plt.subplots(1, 3, figsize=(18, 6))
+    dist_fig, dist_axes = plt.subplots(1, 3, figsize=(15, 5))
 
     def softplus(a):
         return np.log(1 + np.exp(a))
 
     for i in range(3):
+        obs_loc_prior = Ellipse(xy=loc_prior_mu[i], width=loc_prior_std[i, 0], height=loc_prior_std[i, 1],
+                                facecolor='none')
+        edge_c = np.random.rand(3)
+        dist_axes[i].add_artist(obs_loc_prior)
+        obs_loc_prior.set_edgecolor(edge_c)
+
         obs_loc = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
                    for loc_, size_ in zip(loc_mu[i], loc_std[i])]
         obs_size_mu = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
@@ -130,8 +152,27 @@ def plot_obs_dist(writer, reference_pts, recon_control_points,
             size_s.set_edgecolor(edge_c)
             size_l.set_edgecolor(edge_c)
             loc_.set_linestyle('--')
-        dist_axes[i].set(xlim=[-10, 10], ylim=[-10, 10])
+
+        x_min = np.min([loc_prior_mu[i, 0] - loc_prior_std[i, 0],
+                        np.min(loc_mu[i, :, 0] - loc_std[i, :, 0]),
+                        np.min(loc_mu[i, :, 0] - softplus(size_mu[i, :, 0] + size_std[i, :, 0]))])
+        x_max = np.max([loc_prior_mu[i, 0] + loc_prior_std[i, 0],
+                        np.max(loc_mu[i, :, 0] + loc_std[i, :, 0]),
+                        np.max(loc_mu[i, :, 0] + softplus(size_mu[i, :, 0] + size_std[i, :, 0]))])
+        y_min = np.min([loc_prior_mu[i, 1] - loc_prior_std[i, 1],
+                        np.min(loc_mu[i, :, 1] - loc_std[i, :, 1]),
+                        np.min(loc_mu[i, :, 1] - softplus(size_mu[i, :, 1] + size_std[i, :, 1]))])
+        y_max = np.max([loc_prior_mu[i, 1] + loc_prior_std[i, 1],
+                        np.max(loc_mu[i, :, 1] + loc_std[i, :, 1]),
+                        np.max(loc_mu[i, :, 1] + softplus(size_mu[i, :, 1] + size_std[i, :, 1]))])
+        x_mid, y_mid = (x_max + x_min) / 2, (y_max + y_min) / 2
+        x_range, y_range = x_max - x_min, y_max - y_min
+        x_min, x_max = x_mid - x_range * 0.6, x_mid + x_range * 0.6
+        y_min, y_max = y_mid - y_range * 0.6, y_mid + y_range * 0.6
+
+        dist_axes[i].axis('equal')
+        dist_axes[i].set(xlim=[x_min, x_max], ylim=[y_min, y_max])
 
     dist_fig.tight_layout()
-    writer.add_figure("ODE_opt/dist", dist_fig, epoch)
+    writer.add_figure("distribution", dist_fig, epoch)
     plt.close("all")
