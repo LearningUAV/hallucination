@@ -111,9 +111,9 @@ class Hallucination(nn.Module):
 
         return recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size
 
-    def loss(self, traj, recon_traj, reference_pts, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
+    def loss(self, full_traj, traj, recon_traj, reference_pts, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
         """
-
+        :param full_traj: (batch_size, Dy, T_) tensor
         :param traj: (batch_size, T, Dy) tensor
         :param recon_traj: (batch_size, T, Dy) tensor
         :param loc_mu: (batch_size, num_obs, Dy) tensor
@@ -124,8 +124,9 @@ class Hallucination(nn.Module):
         :param size: (batch_size, num_obs, Dy) tensor
         :return:
         """
+        Dy = self.params.Dy
         device = self.params.device
-        num_obs = self.params.model_params.num_obs
+        Dy = self.params.Dy
         batch_size = self.params.training_params.batch_size
 
         # reconstruction error
@@ -135,7 +136,8 @@ class Hallucination(nn.Module):
         # repulsion between obs
         loc_diff = loc[:, :, None] - loc[:, None]                                   # (batch_size, num_obs, num_obs, Dy)
         loc_diff_norm = torch.norm(loc_diff, dim=-1)
-        loc_diff[loc_diff_norm == 0] = 2.0
+        # mask distance between the same obs to avoid numerical issues
+        loc_diff[loc_diff_norm == 0] = size.detach().view(-1, Dy) * 3
 
         loc_diff_norm = torch.norm(loc_diff, dim=-1, keepdim=True)
         loc_diff_direction = loc_diff / loc_diff_norm                               # (batch_size, num_obs, num_obs, Dy)
@@ -144,13 +146,12 @@ class Hallucination(nn.Module):
         radius_along_direction = 1 / tmp                                            # (batch_size, num_obs, num_obs)
 
         combined_radius_along_direction = radius_along_direction + torch.transpose(radius_along_direction, 1, 2)
-        relative_obs_distance = loc_diff_norm[:, :, :, 0] / combined_radius_along_direction
-        repulsive_loss = torch.clamp(1.0 - relative_obs_distance, min=0) ** 2
+        obs_overlap = combined_radius_along_direction - loc_diff_norm[..., 0]
+        repulsive_loss = torch.clamp(obs_overlap, min=0) ** 2
         repulsive_loss = torch.sum(repulsive_loss) / batch_size
-        repulsive_loss *= self.params.model_params.lambda_repulsion
+        repulsive_loss *= self.params.model_params.lambda_mutual_repulsion
 
         # repulsion between obs and reference_pts
-        batch_size, num_control_pts, Dy = list(reference_pts.size())
         diff = reference_pts.view(batch_size, 1, -1, Dy) - loc.view(batch_size, -1, 1, Dy)
         diff_norm = torch.linalg.norm(diff, dim=-1)                                 # (B, num_obs, num_control_pts)
         direction = diff / torch.clamp(diff_norm, min=EPS)[..., None]
@@ -172,10 +173,20 @@ class Hallucination(nn.Module):
         # KL divergence from prior
         loc_var = torch.exp(loc_log_var)                                            # (batch_size, num_obs, Dy)
 
-        loc_prior_mu = self.params.model_params.obs_loc_prior_mu * torch.ones(self.params.Dy).to(device)
-        loc_prior_var = self.params.model_params.obs_loc_prior_var * torch.ones(self.params.Dy).to(device)
-        loc_prior_mu = loc_prior_mu[None, None, :]                                  # (1, 1, Dy)
-        loc_prior_var = loc_prior_var[None, None, :]
+        loc_prior_mu = torch.mean(full_traj[:, :Dy], dim=-1)                        # (batch_size, Dy)
+        loc_prior_var = torch.var(full_traj[:, :Dy], dim=-1)                        # (batch_size, Dy)
+        loc_prior_var *= self.params.model_params.obs_loc_prior_var_coef
+        loc_prior_mu = loc_prior_mu[:, None]                                        # (batch_size, 1, Dy)
+        loc_prior_var = loc_prior_var[:, None]                                      # (batch_size, 1, Dy)
+
+        # kl divergence between two diagonal Gaussian
+        loc_kl_loss = 0.5 * (torch.sum(loc_var / loc_prior_var
+                                       + (loc_mu - loc_prior_mu) ** 2 / loc_prior_var
+                                       + torch.log(loc_prior_var) - torch.log(loc_var),
+                                       dim=-1)
+                             - self.params.Dy)
+        loc_kl_loss = torch.mean(torch.sum(loc_kl_loss, dim=1))
+        loc_kl_loss *= self.params.model_params.lambda_loc_kl
 
         size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
 
@@ -191,23 +202,24 @@ class Hallucination(nn.Module):
         size_prior_var = size_prior_var[None, None, :]
 
         # kl divergence between two diagonal Gaussian
-        loc_kl_loss = 0.5 * (torch.sum(loc_var / loc_prior_var
-                                       + (loc_mu - loc_prior_mu) ** 2 / loc_prior_var
-                                       + torch.log(loc_prior_var) - torch.log(loc_var),
-                                       dim=-1)
-                             - self.params.Dy)
         size_kl_loss = 0.5 * (torch.sum(size_var / size_prior_var
                                         + (size_mu - size_prior_mu) ** 2 / size_prior_var
                                         + torch.log(size_prior_var) - torch.log(size_var),
                                         dim=-1)
                               - self.params.Dy)
-        kl_loss = size_kl_loss  # + loc_kl_loss
-        kl_loss = torch.mean(torch.sum(kl_loss, dim=1))
-        kl_loss *= self.params.model_params.lambda_kl
+        size_kl_loss = torch.mean(torch.sum(size_kl_loss, dim=1))
+        size_kl_loss *= self.params.model_params.lambda_size_kl
 
-        loss = recon_loss + kl_loss + repulsive_loss + reference_repulsion_loss
+        loss = recon_loss + loc_kl_loss + size_kl_loss + repulsive_loss + reference_repulsion_loss
+        loss_detail = {"loss": loss,
+                       "recon_loss": recon_loss,
+                       "loc_kl_loss": loc_kl_loss,
+                       "size_kl_loss": size_kl_loss,
+                       "repulsive_loss": repulsive_loss,
+                       "reference_repulsion_loss": reference_repulsion_loss}
+        loss_detail = dict([(k, v.item()) for k, v in loss_detail.items()])
 
-        return loss, (recon_loss, repulsive_loss, kl_loss, reference_repulsion_loss)
+        return loss, loss_detail
 
     def test(self, reference_pts, recon_control_points, loc, size):
         model_params = self.model_params

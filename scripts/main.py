@@ -75,15 +75,16 @@ def train(params):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    lambda_kl_final = model_params.lambda_kl
-    lambda_repulsion_final = model_params.lambda_repulsion
+    lambda_loc_kl_final = model_params.lambda_loc_kl
+    lambda_size_kl_final = model_params.lambda_size_kl
+    lambda_mutual_repulsion_final = model_params.lambda_mutual_repulsion
     lambda_annealing_steps = model_params.lambda_annealing_steps
     for epoch in range(training_params.epochs):
-        losses = []
-        recon_losses, repulsive_losses, kl_losses, reference_repulsion_losses = [], [], [], []
+        loss_details = []
         model.train(training=True)
-        params.model_params.lambda_kl = lambda_kl_final * (epoch + 1) / lambda_annealing_steps
-        params.model_params.lambda_repulsion = lambda_repulsion_final * (epoch + 1) / lambda_annealing_steps
+        model_params.lambda_loc_kl = lambda_loc_kl_final * (epoch + 1) / lambda_annealing_steps
+        model_params.lambda_size_kl = lambda_size_kl_final * (epoch + 1) / lambda_annealing_steps
+        model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * (epoch + 1) / lambda_annealing_steps
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
@@ -95,38 +96,28 @@ def train(params):
             optimizer.zero_grad()
             recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size = \
                 model(full_traj, reference_pts, decode=True)
-            loss, (recon_loss, repulsive_loss, kl_loss, reference_repulsion_loss) = \
-                model.loss(traj, recon_traj, reference_pts,
-                           loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
+            loss, loss_detail = model.loss(full_traj, traj, recon_traj, reference_pts,
+                                           loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
             loss.backward()
-            print(recon_loss.item(), repulsive_loss.item(), kl_loss.item(), reference_repulsion_loss.item())
+            print(loss_detail)
             optimizer.step()
-            losses.append(loss.item())
 
-            recon_losses.append(recon_loss.item())
-            repulsive_losses.append(repulsive_loss.item())
-            kl_losses.append(kl_loss.item())
-            reference_repulsion_losses.append(reference_repulsion_loss.item())
+            loss_details.append(loss_detail)
 
-            if (i_batch + epoch * len(dataloader)) % 10 == 0:
-                plot_opt(writer, reference_pts, recon_control_points,
-                         loc, size, i_batch + epoch * len(dataloader))
-                plot_obs_dist(writer, reference_pts, recon_control_points,
-                              loc_mu, loc_log_var, loc, size_mu, size_log_var, size, i_batch + epoch * len(dataloader))
+            num_batch = i_batch + epoch * len(dataloader)
+            if num_batch % 10 == 0:
+                plot_opt(writer, reference_pts, recon_control_points, loc, size, num_batch)
+                plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, num_batch)
             print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs, i_batch + 1, len(dataloader)))
 
         if writer is not None:
-            writer.add_scalar("train/loss", np.mean(losses), epoch)
-            writer.add_scalar("train/recon_loss", np.mean(recon_losses), epoch)
-            writer.add_scalar("train/repulsive_loss", np.mean(repulsive_losses), epoch)
-            writer.add_scalar("train/kl_loss", np.mean(kl_losses), epoch)
-            writer.add_scalar("train/opt_remain_loss", np.mean(reference_repulsion_losses), epoch)
-
-            model.train(training=False)
-            plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch)
+            # list of dict to dict of list
+            loss_details = {k: [dic[k] for dic in loss_details] for k in loss_details[0]}
+            for k, v in loss_details:
+                writer.add_scalar("train/{}".format(k), np.mean(v), epoch)
 
         if (epoch + 1) % training_params.saving_freq == 0:
-            torch.save(model.state_dict(), os.path.join(model_dir, "model_{0}".format(epoch + 1)),
+            torch.save(model.state_dict(), os.path.join(model_dir, "model_{}".format(epoch + 1)),
                        pickle_protocol=2, _use_new_zipfile_serialization=False)
 
 
