@@ -387,15 +387,16 @@ class CVX_Decoder(nn.Module):
         # intersection_projection = <intersection, direction>
         intersection_projection = torch.sum(obs_loc[:, :, None] * direction, dim=-1) + t
 
-        dist = init_control_pts[:, None] - obs_loc[:, :, None]                  # (B, num_obs, num_control_pts, Dy)
-        dist_len = torch.norm(dist, dim=-1)                                     # (B, num_obs, num_control_pts)
-        dist_len_clamped = torch.clamp(dist_len[..., None], min=EPS)            # (B, num_obs, num_control_pts, 1)
-        dist_direction = dist / dist_len_clamped                                # (B, num_obs, num_control_pts, Dy)
-        radius_along_dir_inv = torch.sqrt(torch.sum(dist_direction ** 2 / obs_size ** 2, dim=-1))
-        radius_along_dir_inv = torch.clamp(radius_along_dir_inv, min=EPS)       # (B, num_obs, num_control_pts)
-        radius_along_dir = 1 / radius_along_dir_inv
-
-        in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
+        # dist = init_control_pts[:, None] - obs_loc[:, :, None]                  # (B, num_obs, num_control_pts, Dy)
+        # dist_len = torch.norm(dist, dim=-1)                                     # (B, num_obs, num_control_pts)
+        # dist_len_clamped = torch.clamp(dist_len[..., None], min=EPS)            # (B, num_obs, num_control_pts, 1)
+        # dist_direction = dist / dist_len_clamped                                # (B, num_obs, num_control_pts, Dy)
+        # radius_along_dir_inv = torch.sqrt(torch.sum(dist_direction ** 2 / obs_size ** 2, dim=-1))
+        # radius_along_dir_inv = torch.clamp(radius_along_dir_inv, min=EPS)       # (B, num_obs, num_control_pts)
+        # radius_along_dir = 1 / radius_along_dir_inv
+        #
+        # in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
+        in_collision = torch.ones_like(intersection_projection)
 
         direction = direction * in_collision[..., None]
         intersection_projection = intersection_projection * in_collision
