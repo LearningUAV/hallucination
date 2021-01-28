@@ -1,4 +1,5 @@
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
@@ -56,7 +57,10 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
 
 
 def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
-    batch_size = reference_pts.size(0)
+    batch_size, num_obstacle, Dy = loc.size()
+    if Dy != 2:
+        pass
+
     if batch_size <= 3:
         idx = 0
     else:
@@ -73,15 +77,16 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
     reference_pts = to_numpy(reference_pts)
 
     opt_fig, opt_axes = plt.subplots(1, 3, figsize=(15, 5))
+    colors = sns.color_palette('husl', n_colors=num_obstacle + 1)
     for i in range(3):
         opt_axes[i].plot(reference_pts[i, :, 0], reference_pts[i, :, 1], label="reference")
         opt_axes[i].scatter(reference_pts[i, :, 0], reference_pts[i, :, 1])
 
         obses = [Ellipse(xy=loc_, width=size_[0], height=size_[1]) for loc_, size_ in zip(loc[i], size[i])]
-        for obs in obses:
+        for j, obs in enumerate(obses):
             opt_axes[i].add_artist(obs)
             obs.set_alpha(0.5)
-            obs.set_facecolor(np.random.rand(3))
+            obs.set_facecolor(colors[j])
 
         ode_num_timestamps = recon_control_points.shape[0]
         for j in range(ode_num_timestamps):
@@ -111,8 +116,9 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
 
 
 def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, epoch):
-    batch_size = full_traj.size(0)
-    Dy = loc_mu.size(-1)
+    batch_size, num_obstacle, Dy = loc_mu.size()
+    if Dy != 2:
+        pass
     if batch_size <= 3:
         idx = 0
     else:
@@ -134,10 +140,11 @@ def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_
     def softplus(a):
         return np.log(1 + np.exp(a))
 
+    colors = sns.color_palette('husl', n_colors=num_obstacle + 1)
     for i in range(3):
         obs_loc_prior = Ellipse(xy=loc_prior_mu[i], width=loc_prior_std[i, 0], height=loc_prior_std[i, 1],
                                 facecolor='none')
-        edge_c = np.random.rand(3)
+        edge_c = colors[-1]
         dist_axes[i].add_artist(obs_loc_prior)
         obs_loc_prior.set_edgecolor(edge_c)
 
@@ -149,8 +156,8 @@ def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_
                       for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] - size_std[i]))]
         obs_size_l = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
                       for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] + size_std[i]))]
-        for loc_, size_mu_, size_s, size_l in zip(obs_loc, obs_size_mu, obs_size_s, obs_size_l):
-            edge_c = np.random.rand(3)
+        for j, (loc_, size_mu_, size_s, size_l) in enumerate(zip(obs_loc, obs_size_mu, obs_size_s, obs_size_l)):
+            edge_c = colors[j]
             dist_axes[i].add_artist(loc_)
             dist_axes[i].add_artist(size_mu_)
             dist_axes[i].add_artist(size_s)
