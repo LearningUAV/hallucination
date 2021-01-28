@@ -9,6 +9,7 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
+from torch.utils.tensorboard import SummaryWriter
 
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
@@ -55,20 +56,15 @@ def train(params):
     training_params = params.training_params
     model_params = params.model_params
 
+    writer = SummaryWriter(os.path.join(params.rslts_dir, "tensorboard"))
     dataset = HallucinationDataset(params, transform=transforms.Compose([ToTensor(device)]))
     dataloader = DataLoader(dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
 
-    model = Hallucination(params).to(device)
+    model = Hallucination(params, writer).to(device)
     if training_params.load_model is not None and os.path.exists(training_params.load_model):
         model.load_state_dict(torch.load(training_params.load_model, map_location=device))
 
     optimizer = optim.Adam(model.parameters(), lr=training_params.lr)
-
-    # py2 can only use torch 1.0 which doesn"t support tensorboard...
-    writer = None
-    if sys.version_info[0] == 3:
-        from torch.utils.tensorboard import SummaryWriter
-        writer = SummaryWriter(os.path.join(params.rslts_dir, "tensorboard"))
 
     # model saving
     model_dir = os.path.join(params.rslts_dir, "trained_models")

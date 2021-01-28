@@ -56,7 +56,7 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
     plt.close("all")
 
 
-def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
+def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_bug=False):
     batch_size, num_obstacle, Dy = loc.size()
     if Dy != 2:
         pass
@@ -111,7 +111,7 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch):
         opt_axes[i].legend()
 
     opt_fig.tight_layout()
-    writer.add_figure("sample", opt_fig, epoch)
+    writer.add_figure("sample" if not is_bug else "opt_error_logging", opt_fig, epoch)
     plt.close("all")
 
 

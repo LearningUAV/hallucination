@@ -1,11 +1,15 @@
 import numpy as np
 from scipy.interpolate import BSpline
+import logging
+logger = logging.Logger('catch_all')
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import diffcp
 from solver import Neural_ODE_Decoder, CVX_Decoder, EPS
+from utils import plot_opt
 
 
 class Encoder(nn.Module):
@@ -54,7 +58,7 @@ class Encoder(nn.Module):
 
 
 class Hallucination(nn.Module):
-    def __init__(self, params):
+    def __init__(self, params, writer=None):
         super(Hallucination, self).__init__()
         self.params = params
         self.model_params = self.params.model_params
@@ -69,6 +73,10 @@ class Hallucination(nn.Module):
         self.encoder = Encoder(params).to(params.device)
         self.decoder = Decoder(params).to(params.device)
         self.coef = self._init_bspline_coef()
+
+        # for optimization debugging
+        self.writer = writer
+        self.num_decoder_error = 0
 
     def _init_bspline_coef(self):
         model_params = self.model_params
@@ -103,7 +111,15 @@ class Hallucination(nn.Module):
         init_control_pts = reference_pts[:, None, 0] + \
                            torch.linspace(0, 1, model_params.num_control_pts)[None, :, None].to(self.params.device) * \
                            (reference_pts[:, None, -1] - reference_pts[:, None, 0])
-        recon_control_points = self.decoder(init_control_pts, loc, size, reference_pts)
+        try:
+            recon_control_points = self.decoder(init_control_pts, loc, size, reference_pts)
+        except diffcp.cone_program.SolverError as e:
+            logger.error(str(e))
+            recon_control_points = init_control_pts[None, ...]
+            if self.writer:
+                plot_opt(self.writer, reference_pts, recon_control_points, loc, size,
+                         self.num_decoder_error, is_bug=True)
+                self.num_decoder_error += 1
 
         # (batch_size, 1, num_control_pts, 3)
         last_recon_control_points = recon_control_points[-1, :, None]
