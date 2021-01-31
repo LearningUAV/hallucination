@@ -17,6 +17,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.params = params
         self.model_params = model_params = params.model_params
+        self.auto_regressive = model_params.auto_regressive
 
         self.conv1d_layers = nn.ModuleList()
         output_len = model_params.full_traj_len
@@ -27,22 +28,29 @@ class Encoder(nn.Module):
                                                 kernel_size=kernel_size, stride=stride))
             prev_channel = channel
             output_len = int((output_len - kernel_size) / stride + 1)
-        self.fc = nn.Linear(output_len * model_params.encoder_channels[-1], model_params.num_obs * params.Dy * 4)
-        self.ln = nn.LayerNorm(model_params.num_obs * params.Dy * 4)
+        conv1d_hidden_dim = output_len * model_params.encoder_channels[-1]
+
+        Dy = params.Dy
+        if self.auto_regressive:
+            self.fcs = nn.ModuleList()
+            for i in range(model_params.num_obs):
+                self.fcs.append(nn.Linear(conv1d_hidden_dim + Dy * 2 * i, Dy * 4))
+        else:
+            self.fc = nn.Linear(conv1d_hidden_dim, model_params.num_obs * Dy * 4)
 
     def reparameterize(self, mu, log_var):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def forward(self, input):
-        output = input
-        for conv1d_layer in self.conv1d_layers:
-            output = F.leaky_relu(conv1d_layer(output))
-        output = output.view(output.size(0), -1)
-        output = self.fc(output)
-        # output = self.ln(output)
-        output = output.view(output.size(0), self.model_params.num_obs, 4, self.params.Dy)
+    def get_dist_and_sample(self, output_from_fc):
+        """
+
+        :param output_from_fc: tensor, shape: (batch_size, N_obs * 4 * Dy)
+        :return: loc_mu, loc_log_var, loc, size_mu, size_log_var, size: tensor, shape: (batch_size, N_obs, Dy)
+        """
+        batch_size = output_from_fc.size(0)
+        output = output_from_fc.view(batch_size, -1, 4, self.params.Dy)
 
         loc_mu = output[:, :, 0]
         loc_log_var = output[:, :, 1]
@@ -55,6 +63,40 @@ class Encoder(nn.Module):
         loc = self.reparameterize(loc_mu, loc_log_var)
         size = torch.log(1 + torch.exp(self.reparameterize(size_mu, size_log_var)))
         return loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+
+    def forward(self, input):
+        output = input
+        batch_size = input.size(0)
+        for conv1d_layer in self.conv1d_layers:
+            output = F.leaky_relu(conv1d_layer(output))
+        output = output.view(batch_size, -1)
+
+        if self.auto_regressive:
+            loc_mu, loc_log_var, loc, size_mu, size_log_var, size = [], [], [], [], [], []
+            auto_regressive_input = []
+            for fc in self.fcs:
+                if not auto_regressive_input:
+                    fc_out = fc(output)
+                else:
+                    fc_out = fc(torch.cat([output] + auto_regressive_input, dim=-1))
+                loc_mu_i, loc_log_var_i, loc_i, size_mu_i, size_log_var_i, size_i = self.get_dist_and_sample(fc_out)
+                loc_mu.append(loc_mu_i)
+                loc_log_var.append(loc_log_var_i)
+                loc.append(loc_i)
+                size_mu.append(size_mu_i)
+                size_log_var.append(size_log_var_i)
+                size.append(size_i)
+                auto_regressive_input.extend([loc_i.view(batch_size, -1), size_i.view(batch_size, -1)])
+            loc_mu = torch.cat(loc_mu, dim=1)
+            loc_log_var = torch.cat(loc_log_var, dim=1)
+            loc = torch.cat(loc, dim=1)
+            size_mu = torch.cat(size_mu, dim=1)
+            size_log_var = torch.cat(size_log_var, dim=1)
+            size = torch.cat(size, dim=1)
+            return loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+        else:
+            output = self.fc(output)
+            return self.get_dist_and_sample(output)
 
 
 class Hallucination(nn.Module):
@@ -105,7 +147,7 @@ class Hallucination(nn.Module):
         model_params = self.model_params
         loc_mu, loc_log_var, loc, size_mu, size_log_var, size = self.encoder(full_traj)
         if not decode:
-            return loc_mu, loc_log_var, size_mu, size_log_var
+            return loc_mu, loc_log_var, loc, size_mu, size_log_var, size
 
         # initial traj before optimization, straight line from start to goal, (batch_size, num_control_pts, Dy)
         init_control_pts = reference_pts[:, None, 0] + \
