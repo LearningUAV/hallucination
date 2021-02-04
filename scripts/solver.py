@@ -355,19 +355,13 @@ class CVX_Decoder(nn.Module):
         lambda_coll = self.params.optimization_params.lambda_collision
         lambda_feas = self.params.optimization_params.lambda_feasibility
         loss = lambda_smooth * smoothness_loss + lambda_coll * collision_loss + lambda_feas * feasibility_loss
-        # warm_starts_loss = 1 * smoothness_loss + 0 * collision_loss + 0 * feasibility_loss
 
         objective = cp.Minimize(loss)
         problem = cp.Problem(objective, constraints)
         assert problem.is_dpp()
 
-        # warm_starts_objective = cp.Minimize(warm_starts_loss)
-        # warm_starts_problem = cp.Problem(warm_starts_objective, constraints)
-        # assert warm_starts_problem.is_dpp()
-
         parameters = direction + intersection_projection + clearance + [reference_pts]
         self.cvxpylayer = CvxpyLayer(problem, parameters=parameters, variables=[control_pts])
-        # self.warm_start_layer = CustomCvxpyLayer(warm_starts_problem, parameters=parameters, variables=[control_pts])
 
     def forward(self, init_control_pts, obs_loc, obs_size, reference_pts):
         # direction: normalized, from obs_loc to reference_pts
@@ -387,16 +381,16 @@ class CVX_Decoder(nn.Module):
         # intersection_projection = <intersection, direction>
         intersection_projection = torch.sum(obs_loc[:, :, None] * direction, dim=-1) + t
 
-        # dist = init_control_pts[:, None] - obs_loc[:, :, None]                  # (B, num_obs, num_control_pts, Dy)
-        # dist_len = torch.norm(dist, dim=-1)                                     # (B, num_obs, num_control_pts)
-        # dist_len_clamped = torch.clamp(dist_len[..., None], min=EPS)            # (B, num_obs, num_control_pts, 1)
-        # dist_direction = dist / dist_len_clamped                                # (B, num_obs, num_control_pts, Dy)
-        # radius_along_dir_inv = torch.sqrt(torch.sum(dist_direction ** 2 / obs_size ** 2, dim=-1))
-        # radius_along_dir_inv = torch.clamp(radius_along_dir_inv, min=EPS)       # (B, num_obs, num_control_pts)
-        # radius_along_dir = 1 / radius_along_dir_inv
-        #
-        # in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
-        in_collision = torch.ones_like(intersection_projection)
+        dist = init_control_pts[:, None] - obs_loc[:, :, None]                  # (B, num_obs, num_control_pts, Dy)
+        dist_len = torch.norm(dist, dim=-1)                                     # (B, num_obs, num_control_pts)
+        dist_len_clamped = torch.clamp(dist_len[..., None], min=EPS)            # (B, num_obs, num_control_pts, 1)
+        dist_direction = dist / dist_len_clamped                                # (B, num_obs, num_control_pts, Dy)
+        radius_along_dir_inv = torch.sqrt(torch.sum(dist_direction ** 2 / obs_size ** 2, dim=-1))
+        radius_along_dir_inv = torch.clamp(radius_along_dir_inv, min=EPS)       # (B, num_obs, num_control_pts)
+        radius_along_dir = 1 / radius_along_dir_inv
+
+        in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
+        # in_collision = torch.ones_like(intersection_projection)
 
         direction = direction * in_collision[..., None]
         intersection_projection = intersection_projection * in_collision
@@ -408,8 +402,88 @@ class CVX_Decoder(nn.Module):
         clearance = torch.unbind(clearance, dim=1)
         parameters = direction + intersection_projection + clearance + (reference_pts,)
 
-        # warm_starts = self.warm_start_layer.get_warm_starts(*parameters)
-        # recon_control_points, = self.cvxpylayer(*parameters, solver_args={"warm_starts": warm_starts})
         recon_control_points, = self.cvxpylayer(*parameters)
 
         return recon_control_points[None, ...]
+
+    def loss(self, init_control_pts, obs_loc, obs_size, reference_pts, final_control_pts):
+        # ============================================ set up ============================================ #
+        # direction: normalized, from obs_loc to reference_pts
+        # shape: (B, num_obs, num_control_pts, Dy)
+        batch_size, num_control_pts, Dy = list(reference_pts.size())
+        diff = reference_pts.view(batch_size, 1, -1, Dy) - obs_loc.view(batch_size, -1, 1, Dy)
+        diff_norm = torch.clamp(torch.linalg.norm(diff, dim=-1, keepdims=True), min=EPS)
+        direction = diff / diff_norm
+
+        # intersection = obs_loc + t * direction. denote direction = (x, y, z) and obs_size = (a, b, c)
+        # then (t * x)^2 / a^2 + (t * y)^2 / b^2 + (t * z)^2 / c^2 = 1
+        # shape: (B, num_obs, num_control_pts)
+        obs_size = obs_size.view(batch_size, -1, 1, Dy)
+        t_inv = torch.sqrt(torch.sum(direction ** 2 / obs_size ** 2, dim=-1))
+        t_inv = torch.clamp(t_inv, min=EPS)
+        t = 1 / t_inv
+        # intersection_projection = <intersection, direction>
+        intersection_projection = torch.sum(obs_loc[:, :, None] * direction, dim=-1) + t
+
+        dist = init_control_pts[:, None] - obs_loc[:, :, None]                  # (B, num_obs, num_control_pts, Dy)
+        dist_len = torch.norm(dist, dim=-1)                                     # (B, num_obs, num_control_pts)
+        dist_len_clamped = torch.clamp(dist_len[..., None], min=EPS)            # (B, num_obs, num_control_pts, 1)
+        dist_direction = dist / dist_len_clamped                                # (B, num_obs, num_control_pts, Dy)
+        radius_along_dir_inv = torch.sqrt(torch.sum(dist_direction ** 2 / obs_size ** 2, dim=-1))
+        radius_along_dir_inv = torch.clamp(radius_along_dir_inv, min=EPS)       # (B, num_obs, num_control_pts)
+        radius_along_dir = 1 / radius_along_dir_inv
+
+        in_collision = dist_len <= radius_along_dir + self.params.optimization_params.clearance
+        # in_collision = torch.ones_like(intersection_projection)
+
+        direction = direction * in_collision[..., None]
+        intersection_projection = intersection_projection * in_collision
+        clearance = self.params.optimization_params.clearance
+        clearance = in_collision * clearance                                    # (B, num_obs, num_control_pts)
+
+        direction = torch.unbind(direction, dim=1)
+        intersection_projection = torch.unbind(intersection_projection, dim=1)
+        clearance = torch.unbind(clearance, dim=1)
+
+        # ============================================ loss ============================================ #
+
+        vel = (final_control_pts[:, 1:] - final_control_pts[:, :-1])    # (B, num_control_pts - 1, Dy)
+        acc = (vel[:, 1:] - vel[:, :-1])                                # (B, num_control_pts - 2, Dy)
+        jerk = (acc[:, 1:] - acc[:, :-1])                               # (B, num_control_pts - 3, Dy)
+        smoothness_loss = torch.sum(acc ** 2, dim=(1, 2)) + torch.sum(jerk ** 2, dim=(1, 2))
+
+        collision_loss = torch.zeros(batch_size, dtype=torch.float32).to(self.params.device)
+        for dir, intersec_proj, clr in zip(direction, intersection_projection, clearance):
+            # dist = (control_pts - intersection_pts).dot(direction to reference on traj), shape: (B, num_control_pts)
+            dist = torch.sum(final_control_pts * dir, dim=-1) - intersec_proj
+            dist_error = clr - dist
+            dist_loss = torch.clamp(dist_error, min=0) ** 2
+            collision_loss += torch.sum(dist_loss, dim=-1)
+
+        knot_dt = self.params.model_params.knot_dt
+        demarcation = self.params.optimization_params.demarcation
+        max_vel = self.params.optimization_params.max_vel
+        max_acc = self.params.optimization_params.max_acc
+
+        vel /= knot_dt
+        acc /= knot_dt ** 2
+
+        if self.SECOND_DERIVATIVE_CONTINOUS:
+            a, b, c = 3 * demarcation, -3 * demarcation ** 2, demarcation ** 3
+            raise NotImplementedError("wait for ego_planner response")
+        else:
+            vel = torch.abs(vel)
+            vel_feasibility_loss = torch.sum(torch.clamp(vel - max_vel, min=0) ** 2, dim=(1, 2))
+
+            acc = torch.abs(acc)
+            acc_feasibility_loss = torch.sum(torch.clamp(acc - max_acc, min=0) ** 2, dim=(1, 2))
+
+            # extra "/ knot_dt ** 2": from ego_planner, to make vel and acc have similar magnitudes
+            feasibility_loss = vel_feasibility_loss / knot_dt ** 2 + acc_feasibility_loss
+
+        lambda_smooth = self.params.optimization_params.lambda_smoothness
+        lambda_coll = self.params.optimization_params.lambda_collision
+        lambda_feas = self.params.optimization_params.lambda_feasibility
+        loss = lambda_smooth * smoothness_loss + lambda_coll * collision_loss + lambda_feas * feasibility_loss
+
+        return loss, (lambda_smooth * smoothness_loss, lambda_coll * collision_loss, lambda_feas * feasibility_loss)
