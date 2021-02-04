@@ -56,29 +56,32 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
     plt.close("all")
 
 
-def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_bug=False):
+def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_bug=False, num_sample=3):
     batch_size, num_obstacle, Dy = loc.size()
     if Dy != 2:
         pass
 
-    if batch_size <= 3:
+    if batch_size <= num_sample:
         idx = 0
     else:
-        idx = np.random.randint(batch_size - 3)
+        idx = np.random.randint(batch_size - num_sample)
 
-    reference_pts = reference_pts[idx:idx + 3]
-    recon_control_points = recon_control_points[:, idx:idx + 3]
-    loc = loc[idx:idx + 3]
-    size = size[idx:idx + 3]
+    reference_pts = reference_pts[idx:idx + num_sample]
+    recon_control_points = recon_control_points[:, idx:idx + num_sample]
+    loc = loc[idx:idx + num_sample]
+    size = size[idx:idx + num_sample]
 
     loc = to_numpy(loc)
     size = to_numpy(size)
     recon_control_points = to_numpy(recon_control_points)
     reference_pts = to_numpy(reference_pts)
 
-    opt_fig, opt_axes = plt.subplots(1, 3, figsize=(15, 5))
+    opt_fig, opt_axes = plt.subplots(1, num_sample, figsize=(15, 5))
+    if num_sample == 1:
+        opt_axes = [opt_axes]
+
     colors = sns.color_palette('husl', n_colors=num_obstacle + 1)
-    for i in range(3):
+    for i in range(num_sample):
         opt_axes[i].plot(reference_pts[i, :, 0], reference_pts[i, :, 1], label="reference")
         opt_axes[i].scatter(reference_pts[i, :, 0], reference_pts[i, :, 1])
 
@@ -115,33 +118,35 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_b
     plt.close("all")
 
 
-def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, epoch):
+def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, epoch, num_sample=3):
     batch_size, num_obstacle, Dy = loc_mu.size()
     if Dy != 2:
         pass
-    if batch_size <= 3:
+    if batch_size <= num_sample:
         idx = 0
     else:
-        idx = np.random.randint(batch_size - 3)
+        idx = np.random.randint(batch_size - num_sample)
 
-    full_traj = to_numpy(full_traj[idx:idx + 3, :Dy])
+    full_traj = to_numpy(full_traj[idx:idx + num_sample, :Dy])
     loc_prior_mu = np.mean(full_traj, axis=-1)
     loc_prior_var = np.var(full_traj, axis=-1) * params.model_params.obs_loc_prior_var_coef
     loc_prior_std = np.sqrt(loc_prior_var)
-    loc_mu = to_numpy(loc_mu[idx:idx + 3])
-    loc_log_var = to_numpy(loc_log_var[idx:idx + 3])
+    loc_mu = to_numpy(loc_mu[idx:idx + num_sample])
+    loc_log_var = to_numpy(loc_log_var[idx:idx + num_sample])
     loc_std = np.exp(0.5 * loc_log_var)
-    size_mu = to_numpy(size_mu[idx:idx + 3])
-    size_log_var = to_numpy(size_log_var[idx:idx + 3])
+    size_mu = to_numpy(size_mu[idx:idx + num_sample])
+    size_log_var = to_numpy(size_log_var[idx:idx + num_sample])
     size_std = np.exp(0.5 * size_log_var)
 
-    dist_fig, dist_axes = plt.subplots(1, 3, figsize=(15, 5))
+    dist_fig, dist_axes = plt.subplots(1, num_sample, figsize=(15, 5))
+    if num_sample == 1:
+        dist_axes = [dist_axes]
 
     def softplus(a):
         return np.log(1 + np.exp(a))
 
     colors = sns.color_palette('husl', n_colors=num_obstacle + 1)
-    for i in range(3):
+    for i in range(num_sample):
         obs_loc_prior = Ellipse(xy=loc_prior_mu[i], width=loc_prior_std[i, 0], height=loc_prior_std[i, 1],
                                 facecolor='none')
         edge_c = colors[-1]
