@@ -71,7 +71,7 @@ def train(params):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    lambda_loc_kl_final = model_params.lambda_loc_kl
+    lambda_loc_reg_final = model_params.lambda_loc_reg
     lambda_size_kl_final = model_params.lambda_size_kl
     lambda_mutual_repulsion_final = model_params.lambda_mutual_repulsion
     lambda_reference_repulsion_final = model_params.lambda_reference_repulsion
@@ -80,7 +80,7 @@ def train(params):
         loss_details = []
         model.train(training=True)
         annealing_coef = (epoch + 1.) / lambda_annealing_steps
-        model_params.lambda_loc_kl = lambda_loc_kl_final * annealing_coef
+        model_params.lambda_loc_reg = lambda_loc_reg_final * annealing_coef
         model_params.lambda_size_kl = lambda_size_kl_final * annealing_coef
         model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * annealing_coef
         model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * annealing_coef

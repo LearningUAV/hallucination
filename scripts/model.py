@@ -242,7 +242,10 @@ class Hallucination(nn.Module):
                                        dim=-1)
                              - self.params.Dy)
         loc_kl_loss = torch.mean(torch.sum(loc_kl_loss, dim=1))
-        loc_kl_loss *= self.params.model_params.lambda_loc_kl
+        loc_logp = -0.5 * torch.sum((loc_mu - loc_prior_mu) ** 2 / loc_prior_var, dim=-1) \
+                   -0.5 * (self.params.Dy * np.log(2 * np.pi) + torch.sum(torch.log(loc_prior_var), dim=-1))
+        loc_logp = torch.mean(torch.sum(loc_logp, dim=-1))
+        loc_reg_loss = -loc_logp * self.params.model_params.lambda_loc_reg
 
         size_var = torch.exp(size_log_var)                                          # (batch_size, num_obs, Dy)
 
@@ -266,10 +269,10 @@ class Hallucination(nn.Module):
         size_kl_loss = torch.mean(torch.sum(size_kl_loss, dim=1))
         size_kl_loss *= self.params.model_params.lambda_size_kl
 
-        loss = recon_loss + loc_kl_loss + size_kl_loss + repulsive_loss + reference_repulsion_loss
+        loss = recon_loss + loc_reg_loss + size_kl_loss + repulsive_loss + reference_repulsion_loss
         loss_detail = {"loss": loss,
                        "recon_loss": recon_loss,
-                       "loc_kl_loss": loc_kl_loss,
+                       "loc_reg_loss": loc_reg_loss,
                        "size_kl_loss": size_kl_loss,
                        "repulsive_loss": repulsive_loss,
                        "reference_repulsion_loss": reference_repulsion_loss}

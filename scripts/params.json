@@ -18,7 +18,7 @@
 		"obs_loc_prior_var_coef": 4.0,
 		"obs_size_prior_mu": 0.3,
 		"obs_size_prior_var": 0.01,
-		"lambda_loc_kl": 0.3,
+		"lambda_loc_reg": 0.3,
 		"lambda_size_kl": 0.3,
 		"lambda_mutual_repulsion": 0.1,
 		"lambda_reference_repulsion": 0.05,
