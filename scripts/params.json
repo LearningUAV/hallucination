@@ -25,16 +25,16 @@
 		"lambda_annealing_steps": 50,
 		"knot_start": -3,
 		"knot_end": 18,
-		"knot_dt": 0.2
+		"knot_dt": 0.15
 	},
 	"optimization_params": {
 		"decoder": "CVX",
-		"clearance": 0.1,
+		"clearance": 0.3,
 		"demarcation": 0.3,
 		"max_vel": 2,
 		"max_acc": 10,
 		"lambda_smoothness": 1.0,
-		"lambda_collision": 0.3,
+		"lambda_collision": 0.1,
 		"lambda_feasibility": 1.0,
 		"optimization_lr": 0.1,
 		"ode_t_end": 100,
