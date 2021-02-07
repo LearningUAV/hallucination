@@ -103,8 +103,8 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_b
         y_max = np.maximum(np.max(reference_pts[i, :, 1]), np.max(recon_control_points[:, i, :, 1]))
         x_mid, y_mid = (x_max + x_min) / 2, (y_max + y_min) / 2
         x_range, y_range = x_max - x_min, y_max - y_min
-        x_min, x_max = x_mid - x_range, x_mid + x_range
-        y_min, y_max = y_mid - y_range, y_mid + y_range
+        x_min, x_max = x_mid - 1.5 * x_range, x_mid + 1.5 * x_range
+        y_min, y_max = y_mid - 1.5 * y_range, y_mid + 1.5 * y_range
 
         opt_axes[i].axis('equal')
         opt_axes[i].set_xlabel("x")
@@ -187,8 +187,8 @@ def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_
                         np.max(loc_mu[i, :, 1] + softplus(size_mu[i, :, 1] + size_std[i, :, 1]))])
         x_mid, y_mid = (x_max + x_min) / 2, (y_max + y_min) / 2
         x_range, y_range = x_max - x_min, y_max - y_min
-        x_min, x_max = x_mid - x_range * 0.6, x_mid + x_range * 0.6
-        y_min, y_max = y_mid - y_range * 0.6, y_mid + y_range * 0.6
+        x_min, x_max = x_mid - x_range * 0.75, x_mid + x_range * 0.75
+        y_min, y_max = y_mid - y_range * 0.75, y_mid + y_range * 0.75
 
         dist_axes[i].axis('equal')
         dist_axes[i].set(xlim=[x_min, x_max], ylim=[y_min, y_max])
