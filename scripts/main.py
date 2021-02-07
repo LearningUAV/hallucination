@@ -50,7 +50,7 @@ class TrainingParams:
 
 
 def train(params):
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
     params.device = device
     training_params = params.training_params
@@ -80,10 +80,10 @@ def train(params):
         loss_details = []
         model.train(training=True)
         annealing_coef = (epoch + 1.) / lambda_annealing_steps
-        model_params.lambda_loc_reg = lambda_loc_reg_final * annealing_coef
-        model_params.lambda_size_kl = lambda_size_kl_final * annealing_coef
+        # model_params.lambda_loc_reg = lambda_loc_reg_final * annealing_coef
+        # model_params.lambda_size_kl = lambda_size_kl_final * annealing_coef
         model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * annealing_coef
-        model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * annealing_coef
+        # model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * annealing_coef
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
