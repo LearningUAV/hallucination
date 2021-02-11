@@ -242,7 +242,7 @@ class Hallucination(nn.Module):
                                        dim=-1)
                              - self.params.Dy)
         loc_kl_loss = torch.mean(torch.sum(loc_kl_loss, dim=1))
-        loc_logp = -0.5 * torch.sum((loc_mu - loc_prior_mu) ** 2 / loc_prior_var, dim=-1) \
+        loc_logp = -0.5 * torch.sum((loc - loc_prior_mu) ** 2 / loc_prior_var, dim=-1) \
                    -0.5 * (self.params.Dy * np.log(2 * np.pi) + torch.sum(torch.log(loc_prior_var), dim=-1))
         loc_logp = torch.mean(torch.sum(loc_logp, dim=-1))
         loc_reg_loss = -loc_logp * self.params.model_params.lambda_loc_reg
