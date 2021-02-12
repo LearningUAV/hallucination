@@ -75,15 +75,18 @@ def train(params):
     lambda_size_kl_final = model_params.lambda_size_kl
     lambda_mutual_repulsion_final = model_params.lambda_mutual_repulsion
     lambda_reference_repulsion_final = model_params.lambda_reference_repulsion
-    lambda_annealing_steps = model_params.lambda_annealing_steps
+    reg_final_prop = model_params.reg_final_prop
+    reg_annealing_steps = model_params.reg_annealing_steps
+    repulsion_annealing_steps = model_params.repulsion_annealing_steps
     for epoch in range(training_params.epochs):
         loss_details = []
         model.train(training=True)
-        annealing_coef = (epoch + 1.) / lambda_annealing_steps
-        # model_params.lambda_loc_reg = lambda_loc_reg_final * annealing_coef
-        # model_params.lambda_size_kl = lambda_size_kl_final * annealing_coef
-        model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * annealing_coef
-        # model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * annealing_coef
+        reg_annealing_coef = 1. - epoch / reg_annealing_steps
+        repulsion_annealing_coef = (epoch + 1.) / repulsion_annealing_steps
+        model_params.lambda_loc_reg = lambda_loc_reg_final * (reg_annealing_coef * (1 - reg_final_prop) + reg_final_prop)
+        model_params.lambda_size_kl = lambda_size_kl_final * (reg_annealing_coef * (1 - reg_final_prop) + reg_final_prop)
+        model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * repulsion_annealing_coef
+        model_params.lambda_reference_repulsion = lambda_reference_repulsion_final * repulsion_annealing_coef
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
