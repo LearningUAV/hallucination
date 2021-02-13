@@ -81,8 +81,8 @@ def train(params):
     for epoch in range(training_params.epochs):
         loss_details = []
         model.train(training=True)
-        reg_annealing_coef = 1. - epoch / reg_annealing_steps
-        repulsion_annealing_coef = (epoch + 1.) / repulsion_annealing_steps
+        reg_annealing_coef = np.clip(1. - epoch / reg_annealing_steps, 0, 1)
+        repulsion_annealing_coef = np.clip((epoch + 1.) / repulsion_annealing_steps, 0, 1)
         model_params.lambda_loc_reg = lambda_loc_reg_final * (reg_annealing_coef * (1 - reg_final_prop) + reg_final_prop)
         model_params.lambda_size_kl = lambda_size_kl_final * (reg_annealing_coef * (1 - reg_final_prop) + reg_final_prop)
         model_params.lambda_mutual_repulsion = lambda_mutual_repulsion_final * repulsion_annealing_coef
