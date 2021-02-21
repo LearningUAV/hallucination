@@ -95,7 +95,7 @@ class HallucinationDataset(Dataset):
             pos_transformed = pos_transformed[:, :2]
             vel_transformed = vel_transformed[:, :2]
 
-            if np.random.rand() > 0.5:
+            if not self.eval and np.random.rand() > 0.5:
                 # flipping augmentation
                 pos_transformed[:, 1] = -pos_transformed[:, 1]
                 vel_transformed[:, 1] = -vel_transformed[:, 1]
