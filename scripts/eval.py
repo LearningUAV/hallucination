@@ -54,7 +54,7 @@ def train(params):
     training_params = params.training_params
 
     dataset = HallucinationDataset(params, eval=True, transform=transforms.Compose([ToTensor()]))
-    dataloader = DataLoader(dataset, batch_size=6, shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
 
     model = Hallucination(params, None).to(device)
     assert os.path.exists(training_params.load_model)
@@ -146,7 +146,7 @@ def train(params):
 
 if __name__ == "__main__":
     load_dir = "2021-02-20-23-15-05"
-    model_fname = "model_1440"
+    model_fname = "model_1600"
     sample_per_traj = 1
 
     eval_dir = os.path.join("eval", "{}_{}".format(load_dir, model_fname))
