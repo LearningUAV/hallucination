@@ -232,6 +232,7 @@ class Hallucination(nn.Module):
 
         loc_prior_mu = torch.mean(full_traj[:, :Dy], dim=-1)                        # (batch_size, Dy)
         loc_prior_var = torch.var(full_traj[:, :Dy], dim=-1)                        # (batch_size, Dy)
+        loc_prior_var = torch.clamp(loc_prior_var, min=self.params.model_params.min_obs_loc_prior_var)
         loc_prior_var *= self.params.model_params.obs_loc_prior_var_coef
         loc_prior_mu = loc_prior_mu[:, None]                                        # (batch_size, 1, Dy)
         loc_prior_var = loc_prior_var[:, None]                                      # (batch_size, 1, Dy)

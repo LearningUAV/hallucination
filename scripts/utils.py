@@ -129,7 +129,8 @@ def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_
 
     full_traj = to_numpy(full_traj[idx:idx + num_sample, :Dy])
     loc_prior_mu = np.mean(full_traj, axis=-1)
-    loc_prior_var = np.var(full_traj, axis=-1) * params.model_params.obs_loc_prior_var_coef
+    loc_prior_var = np.maximum(np.var(full_traj, axis=-1), params.model_params.min_obs_loc_prior_var)
+    loc_prior_var *= params.model_params.obs_loc_prior_var_coef
     loc_prior_std = np.sqrt(loc_prior_var)
     loc_mu = to_numpy(loc_mu[idx:idx + num_sample])
     loc_log_var = to_numpy(loc_log_var[idx:idx + num_sample])

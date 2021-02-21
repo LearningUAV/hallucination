@@ -95,6 +95,11 @@ class HallucinationDataset(Dataset):
             pos_transformed = pos_transformed[:, :2]
             vel_transformed = vel_transformed[:, :2]
 
+            if np.random.rand() > 0.5:
+                # flipping augmentation
+                pos_transformed[:, 1] = -pos_transformed[:, 1]
+                vel_transformed[:, 1] = -vel_transformed[:, 1]
+
         pos_label = pos_transformed[self.traj_start - self.reference_pt_idx[0]:self.traj_end - self.reference_pt_idx[0]]
         vel_label = vel_transformed[self.traj_start - self.reference_pt_idx[0]:self.traj_end - self.reference_pt_idx[0]]
 
