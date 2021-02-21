@@ -23,9 +23,7 @@ class AttrDict(dict):
 
 
 class TrainingParams:
-    def __init__(self):
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        training_params_fname = os.path.join(dir_path, "params.json")
+    def __init__(self, training_params_fname="params.json", train=True):
         config = json.load(open(training_params_fname))
         for k, v in config.items():
             self.__dict__[k] = v
@@ -34,7 +32,7 @@ class TrainingParams:
         if self.training_params.load_model is not None:
             self.training_params.load_model = os.path.join("..", "interesting_models", self.training_params.load_model)
 
-        if self.train:
+        if train:
             self.rslts_dir = os.path.join("..", "rslts", "{}".format(time.strftime("%Y-%m-%d-%H-%M-%S")))
             os.makedirs(self.rslts_dir)
             shutil.copyfile(training_params_fname, os.path.join(self.rslts_dir, "params.json"))
@@ -57,7 +55,7 @@ def train(params):
     model_params = params.model_params
 
     writer = SummaryWriter(os.path.join(params.rslts_dir, "tensorboard"))
-    dataset = HallucinationDataset(params, transform=transforms.Compose([ToTensor(device)]))
+    dataset = HallucinationDataset(params, transform=transforms.Compose([ToTensor()]))
     dataloader = DataLoader(dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
 
     model = Hallucination(params, writer).to(device)
@@ -106,11 +104,14 @@ def train(params):
 
             loss_details.append(loss_detail)
 
-            num_batch = i_batch + epoch * len(dataloader)
+            num_batch = i_batch + epoch * training_params.batch_per_epoch
             if num_batch % 10 == 0:
                 plot_opt(writer, reference_pts, recon_control_points, loc, size, num_batch)
                 plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, num_batch)
-            print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs, i_batch + 1, len(dataloader)))
+            print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs,
+                                        i_batch + 1, training_params.batch_per_epoch))
+            if num_batch + 1 == training_params.batch_per_epoch:
+                break
 
         if writer is not None:
             # list of dict to dict of list

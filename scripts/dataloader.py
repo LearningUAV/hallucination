@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore")
 
 
 class HallucinationDataset(Dataset):
-    def __init__(self, params, transform=None):
+    def __init__(self, params, eval=False, transform=None):
         """
         Assumed data orginazation
         hallucination/
@@ -27,6 +27,7 @@ class HallucinationDataset(Dataset):
         super(HallucinationDataset, self).__init__()
 
         self.params = params
+        self.eval = eval
         self.transform = transform
 
         self.Dy = params.Dy
@@ -67,7 +68,7 @@ class HallucinationDataset(Dataset):
         self.odom_mapper = np.array(self.odom_mapper)
 
     def __len__(self):
-        return len(self.traj_mapper) // self.full_traj_len
+        return len(self.traj_mapper)
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -78,6 +79,7 @@ class HallucinationDataset(Dataset):
 
         traj = self.trajs[traj_idx]
         pos, ori, vel, ang_vel = traj["pos"], traj["ori"], traj["vel"], traj["ang_vel"]
+        cmd_vel, cmd_ang_vel = traj.get("cmd_vel"), traj.get("cmd_ang_vel")
 
         pos_base, ori_base = pos[odom_idx], ori[odom_idx]
         pos_full_traj = pos[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
@@ -100,17 +102,39 @@ class HallucinationDataset(Dataset):
                 "full_traj": np.concatenate([pos_transformed, vel_transformed], axis=-1),
                 "traj": np.stack([pos_label, vel_label], axis=0)}
 
+        if self.eval:
+            if cmd_vel is not None and cmd_ang_vel is not None:
+                cmd_vel = cmd_vel[odom_idx + self.traj_start]
+                cmd_ang_vel = cmd_ang_vel[odom_idx + self.traj_start]
+                cmd = np.array([cmd_vel, cmd_ang_vel])
+                data.update({"cmd": cmd})
+            ori_start = R.from_quat(ori[odom_idx + self.traj_start])
+            data.update({"ori": (r * ori_start).as_quat()})
+
         if self.transform:
             data = self.transform(data)
 
         return data
 
 
+class FilterKeys(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __init__(self, filtered_keys):
+        self.filtered_keys = filtered_keys
+
+    def __call__(self, data):
+        data = {}
+        for key in self.filtered_keys:
+            data.pop(key, None)
+        return data
+
+
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
-    def __init__(self, device):
-        self.device = device
+    def __init__(self,):
+        pass
 
     def __call__(self, data):
         new_data = {}

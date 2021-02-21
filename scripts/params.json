@@ -1,17 +1,18 @@
 {
+	"info": null,
 	"Dy": 2,
 	"odom_freq": 50,
-	"train": true,
 	"training_params": {
 		"load_model": "",
 		"epochs": 50000,
 		"batch_size": 64,
+		"batch_per_epoch": 10,
 		"lr": 5e-4,
 		"saving_freq": 10
 	},
 	"model_params": {
-		"encoder_channels": [16, 32, 64, 64],
-		"kernel_sizes": [5, 5, 5, 3],
+		"encoder_channels": [16, 32, 64],
+		"kernel_sizes": [5, 5, 3],
 		"strides": [2, 2, 2, 2],
 		"num_obs": 15,
 		"auto_regressive": true,
