@@ -110,7 +110,7 @@ def train(params):
                 plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_log_var, num_batch)
             print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs,
                                         i_batch + 1, training_params.batch_per_epoch))
-            if num_batch + 1 == training_params.batch_per_epoch:
+            if i_batch + 1 == training_params.batch_per_epoch:
                 break
 
         if writer is not None:
