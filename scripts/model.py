@@ -38,7 +38,8 @@ class Encoder(nn.Module):
         else:
             self.fc = nn.Linear(conv1d_hidden_dim, model_params.num_obs * Dy * 4)
 
-    def reparameterize(self, mu, log_var):
+    @staticmethod
+    def reparameterize(mu, log_var):
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)
         return eps * std + mu
