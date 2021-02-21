@@ -85,7 +85,7 @@ class HallucinationDataset(Dataset):
         pos_full_traj = pos[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
         ori_full_traj = ori[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
         vel_full_traj = vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
-        ang_vel_full_traj = ang_vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1]]
+        ang_vel_full_traj = ang_vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
 
         r = R.from_quat(ori_base).inv()
         pos_transformed = r.apply(pos_full_traj - pos_base)
@@ -100,8 +100,8 @@ class HallucinationDataset(Dataset):
                 pos_transformed[:, 1] = -pos_transformed[:, 1]
                 vel_transformed[:, 1] = -vel_transformed[:, 1]
 
-        pos_label = pos_transformed[self.traj_start - self.reference_pt_idx[0]:self.traj_end - self.reference_pt_idx[0]]
-        vel_label = vel_transformed[self.traj_start - self.reference_pt_idx[0]:self.traj_end - self.reference_pt_idx[0]]
+        pos_label = pos_transformed[self.traj_start:self.traj_end]
+        vel_label = vel_transformed[self.traj_start:self.traj_end]
 
         data = {"reference_pts": pos_transformed[self.reference_pt_idx - self.reference_pt_idx[0]],
                 "full_traj": np.concatenate([pos_transformed, vel_transformed], axis=-1),
