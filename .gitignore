@@ -3,6 +3,8 @@ rslts
 test*.py
 .idea
 ode_demo.py
+eval
+tmp
 
 
 
