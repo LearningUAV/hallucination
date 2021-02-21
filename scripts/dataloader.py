@@ -107,14 +107,11 @@ class HallucinationDataset(Dataset):
                 "full_traj": np.concatenate([pos_transformed, vel_transformed], axis=-1),
                 "traj": np.stack([pos_label, vel_label], axis=0)}
 
-        if self.eval:
-            if cmd_vel is not None and cmd_ang_vel is not None:
-                cmd_vel = cmd_vel[odom_idx + self.traj_start]
-                cmd_ang_vel = cmd_ang_vel[odom_idx + self.traj_start]
-                cmd = np.array([cmd_vel, cmd_ang_vel])
-                data.update({"cmd": cmd})
-            ori_start = R.from_quat(ori[odom_idx + self.traj_start])
-            data.update({"ori": (r * ori_start).as_quat()})
+        if self.eval and cmd_vel is not None and cmd_ang_vel is not None:
+            cmd_vel = cmd_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+            cmd_ang_vel = cmd_ang_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+            cmd = np.array([cmd_vel, cmd_ang_vel])
+            data.update({"cmd": cmd})
 
         if self.transform:
             data = self.transform(data)
