@@ -258,6 +258,6 @@ if __name__ == "__main__":
         for i, (obs_loc, obs_size, traj, goal, cmd) in enumerate(zip(obs_locs, obs_sizes, trajs, goals, cmds))
     )
 
-    demo = {k: np.array([dic[k] for dic in demo_list]) for k in demo_list[0]}
+    demo = {k: np.array([dic[k] for dic in demo_list]).astype(np.float32) for k in demo_list[0]}
     with open(os.path.join(demo_dir, "LfH_demo.p"), "wb") as f:
         pickle.dump(demo, f)
