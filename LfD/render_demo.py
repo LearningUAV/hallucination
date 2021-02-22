@@ -205,8 +205,10 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, cmd, add_obs_loc, add_obs_s
         obs.set_alpha(0.5)
         obs.set_facecolor("violet")
 
-    plt.legend()
-    plt.gca().axis('equal')
+    plt.legend(loc="upper left")
+    plt.gca().axis("equal")
+    plt.xlim([-params.laser_max_range * 1.5, params.laser_max_range * 1.5])
+    plt.ylim([-params.laser_max_range * 1.5, params.laser_max_range * 1.5])
 
     image_dir = os.path.join(params.demo_dir, "plots")
     os.makedirs(image_dir, exist_ok=True)
