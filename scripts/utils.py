@@ -34,7 +34,7 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
         opt_axes[i].plot(reference_pts[i, :, 0], reference_pts[i, :, 1], label="reference")
         opt_axes[i].scatter(reference_pts[i, :, 0], reference_pts[i, :, 1])
 
-        obses = [Ellipse(xy=loc_, width=size_[0], height=size_[1]) for loc_, size_ in zip(loc[i], size[i])]
+        obses = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1]) for loc_, size_ in zip(loc[i], size[i])]
         for obs in obses:
             opt_axes[i].add_artist(obs)
             obs.set_alpha(0.5)
@@ -42,7 +42,8 @@ def plot_ode_opt(writer, model, reference_pts, recon_control_points, loc, size, 
 
         ode_num_timestamps = recon_control_points.shape[0]
         for j in range(ode_num_timestamps):
-            opt_axes[i].plot(recon_control_points[j, i, :, 0], recon_control_points[j, i, :, 1], label="opt_{}".format(j))
+            opt_axes[i].plot(recon_control_points[j, i, :, 0], recon_control_points[j, i, :, 1],
+                             label="opt_{}".format(j))
             opt_axes[i].scatter(recon_control_points[j, i, :, 0], recon_control_points[j, i, :, 1])
         opt_axes[i].axis('equal')
         opt_axes[i].set_xlabel("x")
@@ -85,7 +86,7 @@ def plot_opt(writer, reference_pts, recon_control_points, loc, size, epoch, is_b
         opt_axes[i].plot(reference_pts[i, :, 0], reference_pts[i, :, 1], label="reference")
         opt_axes[i].scatter(reference_pts[i, :, 0], reference_pts[i, :, 1])
 
-        obses = [Ellipse(xy=loc_, width=size_[0], height=size_[1]) for loc_, size_ in zip(loc[i], size[i])]
+        obses = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1]) for loc_, size_ in zip(loc[i], size[i])]
         for j, obs in enumerate(obses):
             opt_axes[i].add_artist(obs)
             obs.set_alpha(0.5)
@@ -148,19 +149,19 @@ def plot_obs_dist(writer, params, full_traj, loc_mu, loc_log_var, size_mu, size_
 
     colors = sns.color_palette('husl', n_colors=num_obstacle + 1)
     for i in range(num_sample):
-        obs_loc_prior = Ellipse(xy=loc_prior_mu[i], width=loc_prior_std[i, 0], height=loc_prior_std[i, 1],
+        obs_loc_prior = Ellipse(xy=loc_prior_mu[i], width=2 * loc_prior_std[i, 0], height=2 * loc_prior_std[i, 1],
                                 facecolor='none')
         edge_c = colors[-1]
         dist_axes[i].add_artist(obs_loc_prior)
         obs_loc_prior.set_edgecolor(edge_c)
 
-        obs_loc = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+        obs_loc = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1], facecolor='none')
                    for loc_, size_ in zip(loc_mu[i], loc_std[i])]
-        obs_size_mu = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+        obs_size_mu = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1], facecolor='none')
                        for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i]))]
-        obs_size_s = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+        obs_size_s = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1], facecolor='none')
                       for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] - size_std[i]))]
-        obs_size_l = [Ellipse(xy=loc_, width=size_[0], height=size_[1], facecolor='none')
+        obs_size_l = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1], facecolor='none')
                       for loc_, size_ in zip(loc_mu[i], softplus(size_mu[i] + size_std[i]))]
         for j, (loc_, size_mu_, size_s, size_l) in enumerate(zip(obs_loc, obs_size_mu, obs_size_s, obs_size_l)):
             edge_c = colors[j]
