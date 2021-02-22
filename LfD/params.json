@@ -1,13 +1,13 @@
 {
 	"info": null,
-	"demo_dir": "2021-02-20-23-15-05_model_1600",
+	"demo_dir": "2021-02-20-23-15-27_model_1600",
 	"training_params": {
 		"load_model": "",
-		"epochs": 50000,
+		"epochs": 500,
 		"batch_size": 32,
 		"batch_per_epoch": 100,
 		"lr": 3e-4,
-		"saving_freq": 10
+		"saving_freq": 1
 	},
 	"model_params": {
 		"obs_size": 722,
