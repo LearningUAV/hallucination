@@ -154,7 +154,7 @@ if __name__ == "__main__":
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
-    load_dir = os.path.join(repo_path, "rslts", load_dir)
+    load_dir = os.path.join(repo_path, "LfH_rslts", load_dir)
     model_fname = os.path.join(load_dir, "trained_models", model_fname)
     params_fname = os.path.join(load_dir, "params.json")
 

@@ -33,7 +33,8 @@ class TrainingParams:
             self.training_params.load_model = os.path.join("..", "interesting_models", self.training_params.load_model)
 
         if train:
-            self.rslts_dir = os.path.join("..", "rslts", "{}".format(time.strftime("%Y-%m-%d-%H-%M-%S")))
+            repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+            self.rslts_dir = os.path.join(repo_path, "LfH_rslts", time.strftime("%Y-%m-%d-%H-%M-%S"))
             os.makedirs(self.rslts_dir)
             shutil.copyfile(training_params_fname, os.path.join(self.rslts_dir, "params.json"))
 
