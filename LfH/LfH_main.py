@@ -89,7 +89,7 @@ def train(params):
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
-            # get the inputs; data is a list of [inputs, labels]
+
             full_traj = sample_batched["full_traj"]
             reference_pts = sample_batched["reference_pts"]
             traj = sample_batched["traj"]

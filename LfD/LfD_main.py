@@ -96,7 +96,7 @@ def train(params):
         for i_batch, sample_batched in enumerate(dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
-            # get the inputs; data is a list of [inputs, labels]
+
             laser = sample_batched["laser"]
             goal = sample_batched["goal"]
             cmd = sample_batched["cmd"]
