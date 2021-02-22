@@ -11,6 +11,8 @@
 	},
 	"model_params": {
 		"obs_size": 722,
-		"layer_sizes": [256, 64]
+		"layer_sizes": [256, 64],
+		"noise_scale": 0.03,
+		"train_prop": 0.9
 	}
 }

@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 
 
 class Demo_2D_Dataset(Dataset):
-    def __init__(self, params, transform=None):
+    def __init__(self, params, train=True, transform=None):
         """
         Assumed data orginazation
         hallucination/
@@ -23,7 +23,9 @@ class Demo_2D_Dataset(Dataset):
         super(Demo_2D_Dataset, self).__init__()
 
         self.params = params
+        self.train = train
         self.transform = transform
+        self.train_prop = params.model_params.train_prop
 
         repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
         demo_dir = os.path.join(repo_path, "LfH_demo", params.demo_dir)
@@ -36,6 +38,16 @@ class Demo_2D_Dataset(Dataset):
         self.cmd = d["cmd"]
 
         assert len(self.laser) == len(self.goal) == len(self.cmd)
+
+        train_len = int(np.round(len(self.laser) * self.train_prop))
+        if self.train:
+            self.laser = self.laser[:train_len]
+            self.goal = self.goal[:train_len]
+            self.cmd = self.cmd[:train_len]
+        else:
+            self.laser = self.laser[train_len:]
+            self.goal = self.goal[train_len:]
+            self.cmd = self.cmd[train_len:]
 
     def __len__(self):
         return len(self.laser)
@@ -65,6 +77,19 @@ class Flip(object):
             data["laser"] = np.flip(data["laser"])
             data["goal"][1] *= -1
             data["cmd"][1] *= -1
+        return data
+
+
+class Noise(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __init__(self, noise_scale=0.05):
+        self.noise_scale = noise_scale
+        pass
+
+    def __call__(self, data):
+        laser_shape = data["laser"].shape
+        data["laser"] = np.random.normal(0, self.noise_scale, size=laser_shape)
         return data
 
 

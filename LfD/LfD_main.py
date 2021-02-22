@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 
-from dataloader import Demo_2D_Dataset, Flip, ToTensor
+from dataloader import Demo_2D_Dataset, Flip, Noise, ToTensor
 
 
 class AttrDict(dict):
@@ -74,10 +74,14 @@ def train(params):
 
     params.device = device
     training_params = params.training_params
+    model_params = params.model_params
 
     writer = SummaryWriter(os.path.join(params.rslts_dir, "tensorboard"))
-    dataset = Demo_2D_Dataset(params, transform=transforms.Compose([Flip(), ToTensor()]))
-    dataloader = DataLoader(dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
+    train_dataset = Demo_2D_Dataset(params, train=True,
+                                    transform=transforms.Compose([Flip(), Noise(model_params.noise_scale), ToTensor()]))
+    test_dataset = Demo_2D_Dataset(params, train=False, transform=transforms.Compose([ToTensor()]))
+    train_dataloader = DataLoader(train_dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
+    test_dataloader = DataLoader(test_dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
 
     model = LfD_2D_model(params).to(device)
     if training_params.load_model is not None and os.path.exists(training_params.load_model):
@@ -91,9 +95,10 @@ def train(params):
         os.makedirs(model_dir)
 
     for epoch in range(training_params.epochs):
-        losses = []
+        train_losses = []
+        test_losses = []
         model.train(mode=True)
-        for i_batch, sample_batched in enumerate(dataloader):
+        for i_batch, sample_batched in enumerate(train_dataloader):
             for key, val in sample_batched.items():
                 sample_batched[key] = val.to(device)
 
@@ -108,15 +113,29 @@ def train(params):
             print(loss.item())
             optimizer.step()
 
-            losses.append(loss.item())
+            train_losses.append(loss.item())
 
             print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs,
                                         i_batch + 1, training_params.batch_per_epoch))
             if i_batch + 1 == training_params.batch_per_epoch:
                 break
 
+        model.train(mode=False)
+        for i_batch, sample_batched in enumerate(test_dataloader):
+            for key, val in sample_batched.items():
+                sample_batched[key] = val.to(device)
+
+            laser = sample_batched["laser"]
+            goal = sample_batched["goal"]
+            cmd = sample_batched["cmd"]
+
+            cmd_pred = model(laser, goal)
+            loss = torch.mean(torch.sum((cmd - cmd_pred) ** 2, dim=1))
+            test_losses.append(loss.item())
+
         if writer is not None:
-            writer.add_scalar("loss", np.mean(losses), epoch)
+            writer.add_scalar("LfD/train_loss", np.mean(train_losses), epoch)
+            writer.add_scalar("LfD/test_loss", np.mean(test_losses), epoch)
 
         if (epoch + 1) % training_params.saving_freq == 0:
             torch.save(model.state_dict(), os.path.join(model_dir, "model_{}".format(epoch + 1)),
