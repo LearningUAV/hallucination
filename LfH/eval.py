@@ -2,6 +2,7 @@ import os
 import pickle
 import shutil
 import numpy as np
+from joblib import Parallel, delayed
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
@@ -12,7 +13,7 @@ import torchvision.transforms as transforms
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
 from utils import to_numpy
-from main import TrainingParams
+from LfH_main import TrainingParams
 
 
 def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
@@ -51,15 +52,17 @@ def eval(params):
     device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
     params.device = device
+    sample_per_traj = params.sample_per_traj
+    batch_size = 32 // sample_per_traj
     training_params = params.training_params
 
     dataset = HallucinationDataset(params, eval=True, transform=transforms.Compose([ToTensor()]))
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     model = Hallucination(params, None).to(device)
     assert os.path.exists(training_params.load_model)
     model.load_state_dict(torch.load(training_params.load_model, map_location=device))
-    print("load model finished")
+    print("model loaded")
 
     rslts = {"obs_loc": [],
              "obs_size": [],
@@ -76,65 +79,86 @@ def eval(params):
     for i_batch, sample_batched in enumerate(dataloader):
         for key, val in sample_batched.items():
             sample_batched[key] = val.to(device)
-        # get the inputs; data is a list of [inputs, labels]
-        full_traj_tensor = sample_batched["full_traj"][:1]
-        reference_pts_tensor = sample_batched["reference_pts"][:1]
-        traj_tensor = sample_batched["traj"][:1]
-        cmd_tensor = sample_batched["cmd"][:1]
 
-        reference_pts = to_numpy(reference_pts_tensor)[0]
-        traj = to_numpy(traj_tensor)[0]
-        cmd = to_numpy(cmd_tensor)[0]
+        full_traj_tensor = sample_batched["full_traj"]
+        reference_pts_tensor = sample_batched["reference_pts"]
+        traj_tensor = sample_batched["traj"]
+        cmd_tensor = sample_batched["cmd"]
 
-        n_samples = 0
+        # (batch_size, ...) to (batch_size * sample_per_traj, ...)
+        # for example, when sample_per_traj = 3, then (A, B, C) changes to (A, A, A, B, B, B, C, C, C)
+        full_traj_tensor = torch.stack([full_traj_tensor] * sample_per_traj, dim=1)
+        reference_pts_tensor = torch.stack([reference_pts_tensor] * sample_per_traj, dim=1)
+        full_traj_tensor = full_traj_tensor.view(tuple((-1, *full_traj_tensor.size()[2:])))
+        reference_pts_tensor = reference_pts_tensor.view(tuple((-1, *reference_pts_tensor.size()[2:])))
+
+        reference_pts = to_numpy(reference_pts_tensor)
+        trajs = to_numpy(traj_tensor)
+        cmds = to_numpy(cmd_tensor)
+
+        trajs = np.stack([trajs] * sample_per_traj, axis=1)
+        cmds = np.stack([cmds] * sample_per_traj, axis=1)
+        trajs = trajs.reshape(tuple((-1, *trajs.shape[2:])))
+        cmds = cmds.reshape(tuple((-1, *cmds.shape[2:])))
+
+        n_samples = np.zeros(batch_size).astype(np.int)
         print_n_samples = -1
-        n_invalid_sample = 0
-        while n_samples < params.sample_per_traj:
-            if print_n_samples != n_samples:
-                print("{}/{} {}/{}".format(i_batch + 1, len(dataloader), n_samples + 1, params.sample_per_traj))
-                print_n_samples = n_samples
+        n_invalid_samples = np.zeros(batch_size).astype(np.int)
+        while (n_samples < sample_per_traj).any():
+            if print_n_samples != n_samples.sum():
+                print("{}/{} {}/{}".format(i_batch + 1, len(dataloader), n_samples.sum(), batch_size * sample_per_traj))
+                print_n_samples = n_samples.sum()
 
-            if params.model_params.auto_regressive:
-                loc_mu, loc_log_var, loc, size_mu, size_log_var, size = model(full_traj_tensor, reference_pts_tensor)
-            else:
-                if n_samples == 0:
-                    loc_mu, loc_log_var, loc, size_mu, size_log_var, size = model(full_traj_tensor, reference_pts_tensor)
-                loc = model.encoder.reparameterize(loc_mu, loc_log_var)
-                size = torch.log(1 + torch.exp(model.encoder.reparameterize(size_mu, size_log_var)))
-
-            loc = to_numpy(loc)[0]
-            size = to_numpy(size)[0]
-
-            # check reference collision
-            diff = reference_pts[3:-3, None] - loc[None]
-            diff_norm = np.linalg.norm(diff, axis=-1)
-            diff_dir = diff / diff_norm[..., None]
-            radius = 1 / np.sqrt((diff_dir ** 2 / size[None] ** 2).sum(axis=-1))
-            reference_collision = diff_norm - radius <= params.optimization_params.clearance * 0.0
-
-            if reference_collision.any():
-                n_invalid_sample += 1
-                if n_invalid_sample % 10 == 0:
-                    print("\tstuck for {} invalid samples".format(n_invalid_sample))
-                if n_invalid_sample == 50:
+            # check if stuck for a long time
+            need_break = True
+            for n_valid, n_invalid in zip(n_samples, n_invalid_samples):
+                if n_valid < sample_per_traj and n_invalid < sample_per_traj * 3:
+                    need_break = False
                     break
-                continue
+            if need_break:
+                print("give up after {} valid and {} invalid".format(n_samples, n_invalid_samples))
+                break
 
-            goal = np.array(traj[0, -1])
-            goal /= np.linalg.norm(goal)
+            _, _, locs, _, _, sizes = model(full_traj_tensor, reference_pts_tensor)
 
-            rslts["obs_loc"].append(loc)
-            rslts["obs_size"].append(size)
-            rslts["traj"].append(traj)
-            rslts["goal"].append(goal)
-            rslts["cmd"].append(cmd)
+            locs = to_numpy(locs)
+            sizes = to_numpy(sizes)
 
-            if i_batch % params.plot_freq == 0 and n_samples == 0:
-                plot_eval_rslts(loc, size, traj, cmd, goal,
-                                fname=os.path.join(eval_plots_dir, "{}_{}".format(i_batch, n_samples)))
+            def reference_collision_checker(reference_pts_, loc_, size_):
+                # check reference collision
+                diff = reference_pts_[3:-3, None] - loc_[None]
+                diff_norm = np.linalg.norm(diff, axis=-1)
+                diff_dir = diff / diff_norm[..., None]
+                radius = 1 / np.sqrt((diff_dir ** 2 / size_[None] ** 2).sum(axis=-1))
+                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 0.0).any()
+                return reference_collision
 
-            n_samples += 1
-            n_invalid_sample = 0
+            collision_list = Parallel(n_jobs=os.cpu_count())(
+                delayed(reference_collision_checker)(reference_pts_, loc_, size_)
+                for reference_pts_, loc_, size_ in zip(reference_pts, locs, sizes)
+            )
+
+            for j, (col, loc, size, traj, cmd) in enumerate(zip(collision_list, locs, sizes, trajs, cmds)):
+                idx_in_batch = j // sample_per_traj
+                if col:
+                    n_invalid_samples[idx_in_batch] += 1
+                    continue
+
+                if n_samples[idx_in_batch] < sample_per_traj:
+                    n_samples[idx_in_batch] += 1
+
+                    goal = traj[0, -1].copy()
+                    goal /= np.linalg.norm(goal)
+
+                    rslts["obs_loc"].append(loc)
+                    rslts["obs_size"].append(size)
+                    rslts["traj"].append(traj)
+                    rslts["goal"].append(goal)
+                    rslts["cmd"].append(cmd)
+
+                    if (i_batch * batch_size + idx_in_batch) % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
+                        plot_eval_rslts(loc, size, traj, cmd, goal,
+                                        fname=os.path.join(eval_plots_dir, "{}".format(i_batch)))
 
         if i_batch % 100 == 0:
             rslts_ = {key: np.array(val) for key, val in rslts.items()}
@@ -149,12 +173,12 @@ def eval(params):
 if __name__ == "__main__":
     load_dir = "2021-02-20-23-15-05"
     model_fname = "model_1440"
-    sample_per_traj = 1
+    sample_per_traj = 8
     plot_freq = 10
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
-    load_dir = os.path.join(repo_path, "LfH_rslts", load_dir)
+    load_dir = os.path.join(repo_path, "rslts", "LfH_rslts", load_dir)
     model_fname = os.path.join(load_dir, "trained_models", model_fname)
     params_fname = os.path.join(load_dir, "params.json")
 
