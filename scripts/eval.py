@@ -17,7 +17,7 @@ from main import TrainingParams
 
 def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
     plt.figure()
-    obses = [Ellipse(xy=loc_, width=size_[0], height=size_[1]) for loc_, size_ in zip(loc, size)]
+    obses = [Ellipse(xy=loc_, width=2 * size_[0], height=2 * size_[1]) for loc_, size_ in zip(loc, size)]
     for obs in obses:
         plt.gca().add_artist(obs)
         obs.set_alpha(0.5)
@@ -47,7 +47,7 @@ def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
     plt.close()
 
 
-def train(params):
+def eval(params):
     device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
 
     params.device = device
@@ -83,7 +83,6 @@ def train(params):
         cmd_tensor = sample_batched["cmd"][:1]
 
         reference_pts = to_numpy(reference_pts_tensor)[0]
-        full_traj = to_numpy(full_traj_tensor)[0]
         traj = to_numpy(traj_tensor)[0]
         cmd = to_numpy(cmd_tensor)[0]
 
@@ -106,8 +105,7 @@ def train(params):
             loc = to_numpy(loc)[0]
             size = to_numpy(size)[0]
 
-            full_traj = np.transpose(full_traj, axes=(1, 0))
-
+            # check reference collision
             diff = reference_pts[3:-3, None] - loc[None]
             diff_norm = np.linalg.norm(diff, axis=-1)
             diff_dir = diff / diff_norm[..., None]
@@ -131,15 +129,19 @@ def train(params):
             rslts["goal"].append(goal)
             rslts["cmd"].append(cmd)
 
-            plot_eval_rslts(loc, size, traj, cmd, goal,
-                            fname=os.path.join(eval_plots_dir, "{}_{}".format(i_batch, n_samples)))
+            if i_batch % params.plot_freq == 0 and n_samples == 0:
+                plot_eval_rslts(loc, size, traj, cmd, goal,
+                                fname=os.path.join(eval_plots_dir, "{}_{}".format(i_batch, n_samples)))
 
             n_samples += 1
             n_invalid_sample = 0
 
-    for key, val in rslts.items():
-        rslts[key] = np.array(val)
+        if i_batch % 100 == 0:
+            rslts_ = {key: np.array(val) for key, val in rslts.items()}
+            with open(os.path.join(eval_dir, "LfH_eval.p"), "wb") as f:
+                pickle.dump(rslts_, f)
 
+    rslts = {key: np.array(val) for key, val in rslts.items()}
     with open(os.path.join(eval_dir, "LfH_eval.p"), "wb") as f:
         pickle.dump(rslts, f)
 
@@ -148,6 +150,7 @@ if __name__ == "__main__":
     load_dir = "2021-02-20-23-15-05"
     model_fname = "model_1440"
     sample_per_traj = 1
+    plot_freq = 10
 
     eval_dir = os.path.join("eval", "{}_{}".format(load_dir, model_fname))
     load_dir = os.path.join("../rslts", load_dir)
@@ -161,5 +164,6 @@ if __name__ == "__main__":
     params.params_fname = params_fname
     params.training_params.load_model = model_fname
     params.sample_per_traj = sample_per_traj
+    params.plot_freq = plot_freq
 
-    train(params)
+    eval(params)
