@@ -148,15 +148,15 @@ def eval(params):
 
 if __name__ == "__main__":
     load_dir = "2021-02-20-23-15-05"
-    model_fname = "model_1600"
+    model_fname = "model_1440"
     sample_per_traj = 1
     plot_freq = 10
 
-    eval_dir = os.path.join("eval", "{}_{}".format(load_dir, model_fname))
-    load_dir = os.path.join("../rslts", load_dir)
+    repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
+    load_dir = os.path.join(repo_path, "rslts", load_dir)
     model_fname = os.path.join(load_dir, "trained_models", model_fname)
     params_fname = os.path.join(load_dir, "params.json")
-    print(model_fname)
 
     params = TrainingParams(params_fname, train=False)
 

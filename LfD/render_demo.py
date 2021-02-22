@@ -21,7 +21,7 @@ class Params:
     vel_span = 120
 
     # for observation rendering
-    laser_max_range = 2
+    laser_max_range = 2.5
     laser_span = 270
     n_scan = 720
     plot_freq = 50
@@ -170,7 +170,7 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, cmd, add_obs_loc, add_obs_s
         vel_norm = np.linalg.norm(vel)
         clearance = vel_norm * vel_time
         vel_ang = np.arctan2(vel[1], vel[0])
-        vel_arc = np.linspace(vel_ang - vel_span / 2, vel_ang + vel_span / 2, 5)
+        vel_arc = np.linspace(vel_ang - vel_span / 2, vel_ang + vel_span / 2, 20)
         sector = pos + clearance * np.stack([np.cos(vel_arc), np.sin(vel_arc)], axis=1)   # (20, 2)
         sector = np.concatenate([pos[None], sector, pos[None]], axis=0)                # (22, 2)
         plt.plot(sector[:, 0], sector[:, 1], color="orange", linestyle="--")
@@ -208,7 +208,7 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, cmd, add_obs_loc, add_obs_s
     plt.legend()
     plt.gca().axis('equal')
 
-    image_dir = os.path.join(params.demo_dir, "images")
+    image_dir = os.path.join(params.demo_dir, "plots")
     os.makedirs(image_dir, exist_ok=True)
     plt.savefig(os.path.join(image_dir, fig_name))
     plt.close()
@@ -217,8 +217,9 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, cmd, add_obs_loc, add_obs_s
 if __name__ == "__main__":
     params = Params()
 
-    params.demo_dir = demo_dir = os.path.join("demo", params.LfH_dir)
-    LfH_dir = os.path.join("eval", params.LfH_dir)
+    repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    params.demo_dir = demo_dir = os.path.join(repo_path, "LfH_demo", params.LfH_dir)
+    LfH_dir = os.path.join(repo_path, "LfH_eval", params.LfH_dir)
 
     os.makedirs(demo_dir, exist_ok=True)
     shutil.copyfile(os.path.join(LfH_dir, "params.json"), os.path.join(demo_dir, "params.json"))
@@ -250,9 +251,10 @@ if __name__ == "__main__":
             demo_["cmd"] = cmd
         return demo_
 
-    demo_list = Parallel(n_jobs=10)(delayed(demo_helper)(i, obs_loc, obs_size, traj, goal, cmd)
-                                    for (i, (obs_loc, obs_size, traj, goal, cmd))
-                                    in enumerate(zip(obs_locs, obs_sizes, trajs, goals, cmds)))
+    demo_list = Parallel(n_jobs=os.cpu_count())(
+        delayed(demo_helper)(i, obs_loc, obs_size, traj, goal, cmd)
+        for i, (obs_loc, obs_size, traj, goal, cmd) in enumerate(zip(obs_locs, obs_sizes, trajs, goals, cmds))
+    )
 
     demo = {k: np.array([dic[k] for dic in demo_list]) for k in demo_list[0]}
     with open(os.path.join(demo_dir, "LfH_demo.p"), "wb") as f:
