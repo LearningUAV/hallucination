@@ -8,12 +8,12 @@ from joblib import Parallel, delayed
 
 
 class Params:
-    LfH_dir = "2021-02-20-23-15-05_model_1440"
+    LfH_dir = "2021-02-21-18-10-09_model_670"
     n_render_per_hallucination = 1
 
     # for additional obstable generation
     n_pts_to_consider = 10
-    n_additional_obs = 10
+    n_additional_obs = 5
     loc_radius = 3.0
     loc_span = 270
     size_min, size_max = 0.2, 0.5
@@ -109,7 +109,8 @@ def generate_additional_obs_2D(traj, params):
     locs, sizes = [], []
 
     n_valid_obs = 0
-    while n_valid_obs < params.n_additional_obs:
+    n_additional_obs = np.random.randint(params.n_additional_obs + 1)
+    while n_valid_obs < n_additional_obs:
         rad, ang = np.random.uniform(0, params.loc_radius), np.random.uniform(-params.loc_span / 2, params.loc_span / 2)
         loc = np.array([np.cos(ang), np.sin(ang)]) * rad
         size = np.random.uniform(params.size_min, params.size_max, 2)
@@ -237,12 +238,13 @@ if __name__ == "__main__":
     goals = data["goal"]
     cmds = data["cmd"]
 
+    print("Total samples: {}".format(len(goals)))
+
     def demo_helper(i, obs_loc, obs_size, traj, goal, cmd):
         demo_ = {"laser": [],
                  "goal": [],
                  "cmd": []}
         for j in range(params.n_render_per_hallucination):
-            print("{}/{} {}/{}".format(i + 1, len(goals), j + 1, params.n_render_per_hallucination))
             add_obs_loc, add_obs_size = generate_additional_obs_2D(traj, params)
             laser_scan = render_laser_scan(obs_loc, obs_size, add_obs_loc, add_obs_size, params)
             if i % params.plot_freq == 0 and j == 0:
