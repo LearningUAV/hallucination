@@ -80,6 +80,18 @@ class Flip(object):
         return data
 
 
+class Clip(object):
+    """Convert ndarrays in sample to Tensors."""
+
+    def __init__(self, laser_max_range=0.05):
+        self.laser_max_range = laser_max_range
+        pass
+
+    def __call__(self, data):
+        data["laser"] = np.minimum(data["laser"], self.laser_max_range)
+        return data
+
+
 class Noise(object):
     """Convert ndarrays in sample to Tensors."""
 

@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 
-from dataloader import Demo_2D_Dataset, Flip, Noise, ToTensor
+from dataloader import Demo_2D_Dataset, Flip, Clip, Noise, ToTensor
 
 
 class AttrDict(dict):
@@ -74,14 +74,17 @@ def train(params):
 
     params.device = device
     training_params = params.training_params
-    model_params = params.model_params
+    noise_scale = params.model_params.noise_scale
+    laser_max_range = params.model_params.laser_max_range
 
     writer = SummaryWriter(os.path.join(params.rslts_dir, "tensorboard"))
-    train_dataset = Demo_2D_Dataset(params, train=True,
-                                    transform=transforms.Compose([Flip(), Noise(model_params.noise_scale), ToTensor()]))
-    test_dataset = Demo_2D_Dataset(params, train=False, transform=transforms.Compose([ToTensor()]))
+
+    train_transform = transforms.Compose([Flip(), Clip(laser_max_range), Noise(noise_scale), ToTensor()])
+    test_transform = transforms.Compose([Clip(laser_max_range), ToTensor()])
+    train_dataset = Demo_2D_Dataset(params, train=True, transform=train_transform)
+    test_dataset = Demo_2D_Dataset(params, train=False, transform=test_transform)
     train_dataloader = DataLoader(train_dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
-    test_dataloader = DataLoader(test_dataset, batch_size=training_params.batch_size, shuffle=True, num_workers=4)
+    test_dataloader = DataLoader(test_dataset, batch_size=training_params.batch_size, shuffle=False, num_workers=4)
 
     model = LfD_2D_model(params).to(device)
     if training_params.load_model is not None and os.path.exists(training_params.load_model):
