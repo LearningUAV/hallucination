@@ -54,7 +54,7 @@ class HallucinationDataset(Dataset):
         self.traj_mapper = []
         self.odom_mapper = []
         traj_idx = 0
-        for fname in os.listdir(data_dir):
+        for fname in params.data_fnames:
             data = pickle.load(open(os.path.join(data_dir, fname), "rb"))
             pos, ori, vel, ang_vel = data["pos"], data["ori"], data["vel"], data["ang_vel"]
             self.trajs.append(data)
