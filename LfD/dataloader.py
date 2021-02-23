@@ -89,7 +89,7 @@ class Noise(object):
 
     def __call__(self, data):
         laser_shape = data["laser"].shape
-        data["laser"] = np.random.normal(0, self.noise_scale, size=laser_shape)
+        data["laser"] += np.random.normal(0, self.noise_scale, size=laser_shape)
         return data
 
 
