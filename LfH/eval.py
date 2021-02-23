@@ -35,15 +35,8 @@ def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
     plt.arrow(pos[0, 0], pos[0, 1], goal[0], goal[1], color="g", width=0.02, label="goal")
     plt.legend()
     plt.gca().axis('equal')
-
-    x_max, x_min = pos[:, 0].max(), pos[:, 0].min()
-    y_max, y_min = pos[:, 1].max(), pos[:, 1].min()
-    x_mid, y_mid = (x_max + x_min) / 2, (y_max + y_min) / 2
-    x_range, y_range = x_max - x_min, y_max - y_min
-    x_min, x_max = x_mid - 1.5 * x_range, x_mid + 1.5 * x_range
-    y_min, y_max = y_mid - 1.5 * y_range, y_mid + 1.5 * y_range
-    plt.xlim([x_min, x_max])
-    plt.ylim([y_min, y_max])
+    plt.xlim([-1, 2])
+    plt.ylim([-1.5, 1.5])
     plt.savefig(fname)
     plt.close()
 
@@ -156,9 +149,9 @@ def eval(params):
                     rslts["goal"].append(goal)
                     rslts["cmd"].append(cmd)
 
-                    if (i_batch * batch_size + idx_in_batch) % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
-                        plot_eval_rslts(loc, size, traj, cmd, goal,
-                                        fname=os.path.join(eval_plots_dir, "{}".format(i_batch)))
+                    sample_idx = i_batch * batch_size + idx_in_batch
+                    if sample_idx % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
+                        plot_eval_rslts(loc, size, traj, cmd, goal, fname=os.path.join(eval_plots_dir, str(sample_idx)))
 
         if i_batch % 100 == 0:
             rslts_ = {key: np.array(val) for key, val in rslts.items()}
@@ -171,10 +164,10 @@ def eval(params):
 
 
 if __name__ == "__main__":
-    load_dir = "2021-02-20-23-15-05"
-    model_fname = "model_1440"
+    load_dir = "2021-02-21-18-10-09"
+    model_fname = "model_670"
     sample_per_traj = 8
-    plot_freq = 10
+    plot_freq = 50
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
