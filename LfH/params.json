@@ -2,6 +2,7 @@
 	"info": null,
 	"Dy": 2,
 	"odom_freq": 50,
+	"data_fnames": ["1m.p"],
 	"training_params": {
 		"load_model": "",
 		"epochs": 50000,
