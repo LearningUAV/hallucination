@@ -8,7 +8,7 @@ from joblib import Parallel, delayed
 
 
 class Params:
-    LfH_dir = "2021-02-21-18-10-09_model_670"
+    LfH_dir = "2021-02-24-14-38-51_model_1000"
     n_render_per_hallucination = 1
 
     # for additional obstable generation
@@ -109,8 +109,7 @@ def generate_additional_obs_2D(traj, params):
     locs, sizes = [], []
 
     n_valid_obs = 0
-    n_additional_obs = np.random.randint(params.n_additional_obs + 1)
-    while n_valid_obs < n_additional_obs:
+    while n_valid_obs < params.n_additional_obs:
         rad, ang = np.random.uniform(0, params.loc_radius), np.random.uniform(-params.loc_span / 2, params.loc_span / 2)
         loc = np.array([np.cos(ang), np.sin(ang)]) * rad
         size = np.random.uniform(params.size_min, params.size_max, 2)
