@@ -27,27 +27,34 @@ class Demo_2D_Dataset(Dataset):
         self.transform = transform
         self.train_prop = params.model_params.train_prop
 
+        self.laser = []
+        self.goal = []
+        self.cmd = []
         repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        demo_dir = os.path.join(repo_path, "LfH_demo", params.demo_dir)
+        for demo_dir in params.demo_dirs:
+            demo_dir = os.path.join(repo_path, "LfH_demo", demo_dir)
 
-        with open(os.path.join(demo_dir, "LfH_demo.p"), "rb") as f:
-            d = pickle.load(f)
+            with open(os.path.join(demo_dir, "LfH_demo.p"), "rb") as f:
+                d = pickle.load(f)
 
-        self.laser = d["laser"]
-        self.goal = d["goal"]
-        self.cmd = d["cmd"]
+            laser = d["laser"]
+            goal = d["goal"]
+            cmd = d["cmd"]
 
-        assert len(self.laser) == len(self.goal) == len(self.cmd)
+            assert len(laser) == len(goal) == len(cmd)
 
-        train_len = int(np.round(len(self.laser) * self.train_prop))
-        if self.train:
-            self.laser = self.laser[:train_len]
-            self.goal = self.goal[:train_len]
-            self.cmd = self.cmd[:train_len]
-        else:
-            self.laser = self.laser[train_len:]
-            self.goal = self.goal[train_len:]
-            self.cmd = self.cmd[train_len:]
+            train_len = int(np.round(len(laser) * self.train_prop))
+            if self.train:
+                self.laser.extend(laser[:train_len].copy())
+                self.goal.extend(goal[:train_len].copy())
+                self.cmd.extend(cmd[:train_len].copy())
+            else:
+                self.laser.extend(laser[train_len:].copy())
+                self.goal.extend(goal[train_len:].copy())
+                self.cmd.extend(cmd[train_len:].copy())
+
+        self.laser, self.goal, self.cmd = np.array(self.laser), np.array(self.goal), np.array(self.cmd)
+
 
     def __len__(self):
         return len(self.laser)
