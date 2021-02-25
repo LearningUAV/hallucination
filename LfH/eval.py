@@ -35,8 +35,8 @@ def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
     plt.arrow(pos[0, 0], pos[0, 1], goal[0], goal[1], color="g", width=0.02, label="goal")
     plt.legend()
     plt.gca().axis('equal')
-    plt.xlim([-1, 2])
-    plt.ylim([-1.5, 1.5])
+    plt.xlim([-1, 5])
+    plt.ylim([-3, 3])
     plt.savefig(fname)
     plt.close()
 
@@ -168,6 +168,7 @@ if __name__ == "__main__":
     model_fname = "model_670"
     sample_per_traj = 8
     plot_freq = 50
+    data_fnames = None  # ["2m.p"]
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
@@ -182,5 +183,7 @@ if __name__ == "__main__":
     params.training_params.load_model = model_fname
     params.sample_per_traj = sample_per_traj
     params.plot_freq = plot_freq
+    if data_fnames is not None:
+        params.data_fnames = data_fnames
 
     eval(params)
