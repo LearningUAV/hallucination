@@ -79,7 +79,6 @@ class HallucinationDataset(Dataset):
 
         traj = self.trajs[traj_idx]
         pos, ori, vel, ang_vel = traj["pos"], traj["ori"], traj["vel"], traj["ang_vel"]
-        cmd_vel, cmd_ang_vel = traj.get("cmd_vel"), traj.get("cmd_ang_vel")
 
         pos_base, ori_base = pos[odom_idx], ori[odom_idx]
         pos_full_traj = pos[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
@@ -107,11 +106,17 @@ class HallucinationDataset(Dataset):
                 "full_traj": np.concatenate([pos_transformed, vel_transformed], axis=-1),
                 "traj": np.stack([pos_label, vel_label], axis=0)}
 
-        if self.eval and cmd_vel is not None and cmd_ang_vel is not None:
-            cmd_vel = cmd_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
-            cmd_ang_vel = cmd_ang_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
-            cmd = np.array([cmd_vel, cmd_ang_vel])
-            data.update({"cmd": cmd})
+        if self.eval:
+            if self.Dy == 2:
+                cmd_vel, cmd_ang_vel = traj.get("cmd_vel"), traj.get("cmd_ang_vel")
+                cmd_vel = cmd_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+                cmd_ang_vel = cmd_ang_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+                cmd = np.array([cmd_vel, cmd_ang_vel])
+                data.update({"cmd": cmd})
+            else:
+                goals = traj.get("goal")
+                goal = goals[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+                data.update({"goal": goal})
 
         if self.transform:
             data = self.transform(data)
