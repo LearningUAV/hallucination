@@ -13,7 +13,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
-from utils import plot_ode_opt, plot_opt, plot_obs_dist
+from utils import plot_opt, plot_obs_dist
 
 
 class AttrDict(dict):
