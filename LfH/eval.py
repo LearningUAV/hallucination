@@ -16,7 +16,7 @@ from utils import to_numpy, set_axes_equal, draw_ellipsoid, rotanimate
 from LfH_main import TrainingParams
 
 
-def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
+def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, fname):
     Dy = loc.shape[-1]
     fig = plt.figure()
     if Dy == 2:
@@ -27,14 +27,16 @@ def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
             obs.set_facecolor(np.random.rand(3))
 
         pos = traj[0]
+        recon_pos = recon_traj[0]
         cmd_vel, cmd_ang_vel = cmd[0], cmd[1]
         cmd_vel = cmd_vel * 0.4
         cmd_ang_vel = cmd_ang_vel * 0.3
         goal = goal * 0.2
         plt.plot(pos[:, 0], pos[:, 1], label="traj")
-        plt.arrow(pos[0, 0], pos[0, 1], cmd_vel, 0, width=0.02, label="cmd_vel")
-        plt.arrow(pos[0, 0] + cmd[0] / 2.0, pos[0, 1] - cmd_ang_vel / 2.0, 0, cmd_ang_vel, width=0.02, label="cmd_ang_vel")
-        plt.arrow(pos[0, 0], pos[0, 1], goal[0], goal[1], color="g", width=0.02, label="goal")
+        plt.plot(recon_pos[:, 0], recon_pos[:, 1], label="recon_traj")
+        plt.arrow(0, 0, cmd_vel, 0, width=0.02, label="cmd_vel")
+        plt.arrow(0 + cmd[0] / 2.0, 0 - cmd_ang_vel / 2.0, 0, cmd_ang_vel, width=0.02, label="cmd_ang_vel")
+        plt.arrow(0, 0, goal[0], goal[1], color="g", width=0.02, label="goal")
         plt.legend()
         plt.gca().axis('equal')
         plt.xlim([-1, 5])
@@ -47,20 +49,23 @@ def plot_eval_rslts(loc, size, traj, cmd, goal, fname):
             draw_ellipsoid(loc_, size_, ax, np.random.rand(3))
 
         pos = traj[0]
-        goal = goal
+        recon_pos = recon_traj[0]
+        goal = goal * 0.2
         ax.plot(pos[:, 0], pos[:, 1], pos[:, 2], label="traj")
-        ax.plot(*list(zip(pos[0], goal)), color="g", label="goal")
+        ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2], color="red")
+        ax.plot(recon_pos[:, 0], recon_pos[:, 1], recon_pos[:, 2], label="recon_traj")
+        ax.plot(*list(zip(pos[0], pos[0] + goal)), color="g", label="goal")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
         ax.legend()
         set_axes_equal(ax)
-        ax.axis('off')  # remove axes for visual appeal
+        # ax.axis('off')  # remove axes for visual appeal
 
         angles = np.linspace(0, 360, 20, endpoint=False)  # Take 20 angles between 0 and 360
 
         # create an animated gif (20ms between frames)
-        rotanimate(ax, angles, fname + '.gif', delay=50)
+        rotanimate(ax, angles, fname + '.gif', delay=500, elevation=60, width=8, height=6)
         plt.close()
 
 
@@ -143,10 +148,10 @@ def eval(params):
                 print("give up after {} valid and {} invalid".format(n_samples, n_invalid_samples))
                 break
 
-            _, _, locs, _, _, sizes = model(full_traj_tensor, reference_pts_tensor)
+            _, _, loc_tensors, _, _, size_tensors = model(full_traj_tensor, reference_pts_tensor)
 
-            locs = to_numpy(locs)
-            sizes = to_numpy(sizes)
+            locs = to_numpy(loc_tensors)
+            sizes = to_numpy(size_tensors)
 
             def reference_collision_checker(reference_pts_, loc_, size_):
                 # check reference collision
@@ -186,7 +191,10 @@ def eval(params):
                     sample_idx = i_batch * batch_size + idx_in_batch
                     if sample_idx % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
                         fname = os.path.join(eval_plots_dir, str(sample_idx))
-                        plot_eval_rslts(loc, size, traj, cmds[j], goal, fname=fname)
+                        recon_traj, _ = model.decode(reference_pts_tensor[j:j + 1],
+                                                     loc_tensors[j:j + 1], size_tensors[j:j + 1])
+                        recon_traj = to_numpy(recon_traj)[0]
+                        plot_eval_rslts(loc, size, traj, recon_traj, cmds[j], goal, fname=fname)
 
         if i_batch % 100 == 0:
             rslts_ = {key: np.array(val) for key, val in rslts.items()}
@@ -199,7 +207,7 @@ def eval(params):
 
 
 if __name__ == "__main__":
-    load_dir = "2021-02-24-14-38-51"
+    load_dir = "2021-02-26-02-22-21"
     model_fname = "model_1000"
     sample_per_traj = 8
     plot_freq = 50

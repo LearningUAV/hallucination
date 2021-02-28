@@ -145,10 +145,18 @@ class Hallucination(nn.Module):
         :param decode: True when training
         :return: recon_traj: (batch_size, T, Dy) tensor
         """
-        model_params = self.model_params
-        loc_mu, loc_log_var, loc, size_mu, size_log_var, size = self.encoder(full_traj)
+        loc_mu, loc_log_var, loc, size_mu, size_log_var, size = self.encode(full_traj)
         if not decode:
             return loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+        recon_traj, recon_control_points = self.decode(reference_pts, loc, size)
+        return recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+
+    def encode(self, full_traj):
+        loc_mu, loc_log_var, loc, size_mu, size_log_var, size = self.encoder(full_traj)
+        return loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+
+    def decode(self, reference_pts, loc, size):
+        model_params = self.model_params
 
         # initial traj before optimization, straight line from start to goal, (batch_size, num_control_pts, Dy)
         init_control_pts = reference_pts[:, None, 0] + \
@@ -168,7 +176,7 @@ class Hallucination(nn.Module):
         last_recon_control_points = recon_control_points[-1, :, None]
         recon_traj = torch.matmul(self.coef, last_recon_control_points)
 
-        return recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size
+        return recon_traj, recon_control_points
 
     def loss(self, full_traj, traj, recon_traj, reference_pts, loc_mu, loc_log_var, loc, size_mu, size_log_var, size):
         """
