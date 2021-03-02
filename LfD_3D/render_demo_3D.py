@@ -9,12 +9,13 @@ from joblib import Parallel, delayed
 import torch
 
 import sys
-sys.path.append(os.path.abspath("../LfH"))
+repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.append(os.path.join(repo_path, "LfH"))
 import utils
 
 
 class Params:
-    LfH_dir = "2021-03-01-02-52-07_model_850"
+    LfH_dir = "2021-03-01-02-52-07_model_1100"
     n_render_per_sample = 1
     device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
@@ -22,7 +23,7 @@ class Params:
     n_pts_to_consider = 5
     n_additional_obs = 5
     loc_radius = 8.0
-    loc_span = 70
+    loc_span = 80
     size_min, size_max = 0.2, 0.8
     vel_time = 1.0
     vel_span = 60
@@ -286,8 +287,6 @@ def repeat(input, repeat_time):
 
 if __name__ == "__main__":
     params = Params()
-
-    repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     params.demo_dir = demo_dir = os.path.join(repo_path, "LfH_demo", params.LfH_dir)
     LfH_dir = os.path.join(repo_path, "LfH_eval", params.LfH_dir)
 

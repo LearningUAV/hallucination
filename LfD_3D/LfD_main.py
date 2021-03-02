@@ -16,7 +16,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
 from dataloader import Demo_3D_Dataset, Flip, Noise, Rescale, ClipNormalization, ToTensor
-from utils import plot_AE
+from LfD_utils import plot_AE
 
 
 class AttrDict(dict):
@@ -27,12 +27,13 @@ class AttrDict(dict):
 
 class TrainingParams:
     def __init__(self, training_params_fname="params.json", train=True):
+        repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        training_params_fname = os.path.join(repo_path, "LfD_3D", training_params_fname)
         config = json.load(open(training_params_fname))
         for k, v in config.items():
             self.__dict__[k] = v
         self.__dict__ = self._clean_dict(self.__dict__)
 
-        repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
         AE_load_model = None
         if self.training_params.AE_load_dir is not None and self.training_params.AE_model_fname:
             AE_load_model = os.path.join(repo_path, "rslts", "AE_rslts", self.training_params.AE_load_dir,
@@ -272,11 +273,11 @@ def train(params):
                     control_pts, reconstructed_depth = control_pts
                 BC_loss = model.BC_loss(control_pts, traj)
                 test_BC_loss.append(BC_loss.item())
-    
+
                 if use_AE:
-                    AE_loss = torch.mean(torch.sum((depth - reconstructed_depth) ** 2, dim=(1, 2, 3)))    
+                    AE_loss = torch.mean(torch.sum((depth - reconstructed_depth) ** 2, dim=(1, 2, 3)))
                     test_AE_loss.append(AE_loss.item())
-    
+
                     test_depth, test_reconstructed_depth = depth, reconstructed_depth
 
         if writer is not None:

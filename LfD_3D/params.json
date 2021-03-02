@@ -1,7 +1,7 @@
 {
 	"info": null,
 	"use_AE": true,
-	"demo_dirs": ["2021-03-01-02-52-07_model_850"],
+	"demo_dirs": ["2021-03-01-02-52-07_model_1100"],
 	"training_params": {
 		"AE_load_dir": null,
 		"AE_model_fname": null,
