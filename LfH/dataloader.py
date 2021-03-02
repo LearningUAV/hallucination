@@ -82,9 +82,9 @@ class HallucinationDataset(Dataset):
 
         pos_base, ori_base = pos[odom_idx], ori[odom_idx]
         pos_full_traj = pos[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
-        ori_full_traj = ori[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
+        # ori_full_traj = ori[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
         vel_full_traj = vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
-        ang_vel_full_traj = ang_vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
+        # ang_vel_full_traj = ang_vel[odom_idx + self.reference_pt_idx[0]:odom_idx + self.reference_pt_idx[-1] + 1]
 
         r = R.from_quat(ori_base).inv()
         pos_transformed = r.apply(pos_full_traj - pos_base)
@@ -114,9 +114,13 @@ class HallucinationDataset(Dataset):
                 cmd = np.array([cmd_vel, cmd_ang_vel])
                 data.update({"cmd": cmd})
             else:
-                goals = traj.get("goal")
-                goal = goals[odom_idx + self.reference_pt_idx[0] + self.traj_start]
-                data.update({"goal": goal})
+                # goals = traj.get("goal")
+                # goal = goals[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+                # data.update({"goal": goal})
+                lin_vel = vel_label[0]
+                ang_vel = ang_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
+                ang_vel = r.apply(ang_vel)
+                data.update({"lin_vel": lin_vel, "ang_vel": ang_vel})
 
         if self.transform:
             data = self.transform(data)

@@ -234,7 +234,7 @@ def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, params):
     return depth
 
 
-def plot_render_rslts(obs_loc, obs_size, traj, goal, add_obs_loc, add_obs_size, depth, params, fig_name):
+def plot_render_rslts(obs_loc, obs_size, traj, goal, lin_vel, add_obs_loc, add_obs_size, depth, params, fig_name):
     image_dir = os.path.join(params.demo_dir, "plots")
     os.makedirs(image_dir, exist_ok=True)
 
@@ -249,10 +249,12 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, add_obs_loc, add_obs_size, 
 
     pos = traj[0]
     goal = goal * 1.0
+    lin_vel = lin_vel * 1.0
     ax = fig.add_subplot(111, projection="3d")
     ax.plot(pos[:, 0], pos[:, 1], pos[:, 2], label="traj")
     ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2], color="red")
-    ax.plot(*list(zip(pos[0], pos[0] + goal)), color="g", label="goal")
+    ax.plot(*list(zip(pos[0], pos[0] + goal)), color="orange", label="goal")
+    ax.plot(*list(zip(pos[0], pos[0] + lin_vel)), color="red", label="goal")
 
     for loc_, size_ in zip(obs_loc, obs_size):
         utils.draw_ellipsoid(loc_, size_, ax, color="red")
@@ -270,6 +272,16 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, add_obs_loc, add_obs_size, 
     plt.savefig(os.path.join(image_dir, fig_name + "_traj"))
     utils.rotanimate(ax, angles, os.path.join(image_dir, fig_name + ".gif"), delay=50, elevation=45, width=8, height=6)
     plt.close()
+
+
+def repeat(input, repeat_time):
+    """
+    :param array/tensor: (A, B, C)
+    :return: (A, A, A, B, B, B, C, C, C) if repeat_time == 3
+    """
+    array = np.stack([input] * repeat_time, axis=1)
+    array = array.reshape(tuple((-1, *array.shape[2:])))
+    return array
 
 
 if __name__ == "__main__":
@@ -290,10 +302,14 @@ if __name__ == "__main__":
     obs_sizes = data["obs_size"]
     trajs = data["traj"]
     goals = data["goal"]
+    lin_vels = data["lin_vel"]
+    ang_vels = data["ang_vel"]
 
     demo = {"depth": [],
             "goal": [],
-            "traj": []}
+            "traj": [],
+            "lin_vel": [],
+            "ang_vel": []}
 
     print("Total samples: {}".format(len(goals)))
     plot_freq = params.plot_freq
@@ -302,18 +318,12 @@ if __name__ == "__main__":
     n_render_in_batch = batch_size * n_render_per_sample
     for i in range(0, len(goals), batch_size):
         print("{}/{}".format(i + 1, len(goals)))
-        obs_loc_batch = obs_locs[i:i + batch_size]
-        obs_size_batch = obs_sizes[i:i + batch_size]
-        traj_batch = trajs[i:i + batch_size]
-        # goal_batch = goals[i:i + batch_size]
-
-        obs_loc_batch = np.stack([obs_loc_batch] * n_render_per_sample, axis=1).reshape((-1, *obs_loc_batch.shape[1:]))
-        obs_size_batch = np.stack([obs_size_batch] * n_render_per_sample, axis=1).reshape((-1, *obs_size_batch.shape[1:]))
-        traj_batch = np.stack([traj_batch] * n_render_per_sample, axis=1).reshape((-1, *traj_batch.shape[1:]))
-        # goal_batch = np.stack([goal_batch] * n_render_per_sample, axis=1).reshape((-1, *goal_batch.shape[1:]))
-        pos_batch = traj_batch[:, 0]
-        goal_batch = pos_batch[:, -1] - pos_batch[:, 0]
-        goal_batch /= np.linalg.norm(goal_batch, axis=-1, keepdims=True)
+        obs_loc_batch = repeat(obs_locs[i:i + batch_size], n_render_per_sample)
+        obs_size_batch = repeat(obs_sizes[i:i + batch_size], n_render_per_sample)
+        traj_batch = repeat(trajs[i:i + batch_size], n_render_per_sample)
+        goal_batch = repeat(goals[i:i + batch_size], n_render_per_sample)
+        lin_vel_batch = repeat(lin_vels[i:i + batch_size], n_render_per_sample)
+        ang_vel_batch = repeat(ang_vels[i:i + batch_size], n_render_per_sample)
 
         if params.n_additional_obs > 0:
             add_obs_list = Parallel(n_jobs=os.cpu_count())(delayed(generate_additional_obs)(traj, params)
@@ -328,15 +338,19 @@ if __name__ == "__main__":
         demo["depth"].extend(depth_batch)
         demo["goal"].extend(goal_batch)
         demo["traj"].extend(traj_batch)
+        demo["lin_vel"].extend(lin_vel_batch)
+        demo["ang_vel"].extend(ang_vel_batch)
         if i % plot_freq == 0:
             obs_loc = obs_loc_batch[0]
             obs_size = obs_size_batch[0]
             traj = traj_batch[0]
             goal = goal_batch[0]
+            lin_vel = lin_vel_batch[0]
             add_obs_loc = add_obs_loc_batch[0] if add_obs_loc_batch is not None else None
             add_obs_size = add_obs_size_batch[0] if add_obs_loc_batch is not None else None
             depth = depth_batch[0]
-            plot_render_rslts(obs_loc, obs_size, traj, goal, add_obs_loc, add_obs_size, depth, params, fig_name=str(i))
+            plot_render_rslts(obs_loc, obs_size, traj, goal, lin_vel, add_obs_loc, add_obs_size, depth, params,
+                              fig_name=str(i))
 
         if i % 200 == 0:
             demo_ = {k: np.array(v).astype(np.float32) for k, v in demo.items()}

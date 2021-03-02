@@ -16,7 +16,7 @@ from utils import to_numpy, set_axes_equal, draw_ellipsoid, rotanimate
 from LfH_main import TrainingParams
 
 
-def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, fname):
+def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, lin_vel, fname):
     Dy = loc.shape[-1]
     fig = plt.figure()
     if Dy == 2:
@@ -51,10 +51,12 @@ def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, fname):
         pos = traj[0]
         recon_pos = recon_traj[0]
         goal = goal * 0.2
+        lin_vel = lin_vel * 1.0
         ax.plot(pos[:, 0], pos[:, 1], pos[:, 2], label="traj")
         ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2], color="red")
         ax.plot(recon_pos[:, 0], recon_pos[:, 1], recon_pos[:, 2], label="recon_traj")
-        ax.plot(*list(zip(pos[0], pos[0] + goal)), color="g", label="goal")
+        ax.plot(*list(zip(pos[0], pos[0] + goal)), color="orange", label="goal")
+        ax.plot(*list(zip(pos[0], pos[0] + lin_vel)), color="red", label="lin_vel")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
@@ -65,8 +67,31 @@ def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, fname):
         angles = np.linspace(0, 360, 20, endpoint=False)  # Take 20 angles between 0 and 360
 
         # create an animated gif (20ms between frames)
-        rotanimate(ax, angles, fname + '.gif', delay=500, elevation=60, width=8, height=6)
+        rotanimate(ax, angles, fname + '.gif', delay=50, elevation=45, width=8, height=6)
+        # plt.show()
         plt.close()
+
+
+def repeat(input, repeat_time):
+    """
+    :param array/tensor: (A, B, C)
+    :return: (A, A, A, B, B, B, C, C, C) if repeat_time == 3
+    """
+    if torch.is_tensor(input):
+        input = to_numpy(input)
+    array = np.stack([input] * repeat_time, axis=1)
+    array = array.reshape(tuple((-1, *array.shape[2:])))
+    return array
+
+
+def repeat_tensor(input, repeat_time):
+    """
+    :param tensor: (A, B, C)
+    :return: (A, A, A, B, B, B, C, C, C) if repeat_time == 3
+    """
+    input = torch.stack([input] * repeat_time, dim=1)
+    output = input.view(tuple((-1, *input.size()[2:])))
+    return output
 
 
 def eval(params):
@@ -83,7 +108,7 @@ def eval(params):
     model = Hallucination(params, None).to(device)
     assert os.path.exists(training_params.load_model)
     model.load_state_dict(torch.load(training_params.load_model, map_location=device))
-    print("model loaded")
+    print(training_params.load_model, "loaded")
 
     rslts = {"obs_loc": [],
              "obs_size": [],
@@ -102,33 +127,17 @@ def eval(params):
         for key, val in sample_batched.items():
             sample_batched[key] = val.to(device)
 
-        full_traj_tensor = sample_batched["full_traj"]
-        reference_pts_tensor = sample_batched["reference_pts"]
-        traj_tensor = sample_batched["traj"]
-
-        # (batch_size, ...) to (batch_size * sample_per_traj, ...)
-        # for example, when sample_per_traj = 3, then (A, B, C) changes to (A, A, A, B, B, B, C, C, C)
-        full_traj_tensor = torch.stack([full_traj_tensor] * sample_per_traj, dim=1)
-        reference_pts_tensor = torch.stack([reference_pts_tensor] * sample_per_traj, dim=1)
-        full_traj_tensor = full_traj_tensor.view(tuple((-1, *full_traj_tensor.size()[2:])))
-        reference_pts_tensor = reference_pts_tensor.view(tuple((-1, *reference_pts_tensor.size()[2:])))
+        full_traj_tensor = repeat_tensor(sample_batched["full_traj"], sample_per_traj)
+        reference_pts_tensor = repeat_tensor(sample_batched["reference_pts"], sample_per_traj)
 
         reference_pts = to_numpy(reference_pts_tensor)
-        trajs = to_numpy(traj_tensor)
-        trajs = np.stack([trajs] * sample_per_traj, axis=1)
-        trajs = trajs.reshape(tuple((-1, *trajs.shape[2:])))
+        trajs = repeat(sample_batched["traj"], sample_per_traj)
 
         if params.Dy == 2:
-            cmd_tensor = sample_batched["cmd"]
-            cmds = to_numpy(cmd_tensor)
-            cmds = np.stack([cmds] * sample_per_traj, axis=1)
-            cmds = cmds.reshape(tuple((-1, *cmds.shape[2:])))
+            cmds = repeat(sample_batched["cmd"], sample_per_traj)
         else:
-            cmds = [None] * (batch_size * sample_per_traj)
-            goal_tensor = sample_batched["goal"]
-            goals = to_numpy(goal_tensor)
-            goals = np.stack([goals] * sample_per_traj, axis=1)
-            goals = goals.reshape(tuple((-1, *goals.shape[2:])))
+            lin_vels = repeat(sample_batched["lin_vel"], sample_per_traj)
+            ang_vels = repeat(sample_batched["ang_vel"], sample_per_traj)
 
         n_samples = np.zeros(batch_size).astype(np.int)
         print_n_samples = -1
@@ -179,14 +188,18 @@ def eval(params):
                     rslts["obs_loc"].append(loc)
                     rslts["obs_size"].append(size)
                     rslts["traj"].append(traj)
+                    goal = traj[0, -1].copy()
+                    goal /= np.linalg.norm(goal)
+                    cmd = lin_vel = None
                     if params.Dy == 2:
-                        goal = traj[0, -1].copy()
-                        goal /= np.linalg.norm(goal)
+                        cmd = cmds[j]
                         rslts["goal"].append(goal)
-                        rslts["cmd"].append(cmds[j])
+                        rslts["cmd"].append(cmd)
                     else:
-                        goal = goals[j]
+                        lin_vel = lin_vels[j]
                         rslts["goal"].append(goal)
+                        rslts["lin_vel"].append(lin_vel)
+                        rslts["ang_vel"].append(ang_vels[j])
 
                     sample_idx = i_batch * batch_size + idx_in_batch
                     if sample_idx % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
@@ -194,7 +207,7 @@ def eval(params):
                         recon_traj, _ = model.decode(reference_pts_tensor[j:j + 1],
                                                      loc_tensors[j:j + 1], size_tensors[j:j + 1])
                         recon_traj = to_numpy(recon_traj)[0]
-                        plot_eval_rslts(loc, size, traj, recon_traj, cmds[j], goal, fname=fname)
+                        plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, lin_vel, fname=fname)
 
         if i_batch % 100 == 0:
             rslts_ = {key: np.array(val) for key, val in rslts.items()}
@@ -207,10 +220,10 @@ def eval(params):
 
 
 if __name__ == "__main__":
-    load_dir = "2021-02-26-02-22-21"
-    model_fname = "model_1000"
+    load_dir = "2021-03-01-02-52-07"
+    model_fname = "model_500"
     sample_per_traj = 8
-    plot_freq = 50
+    plot_freq = 2000
     data_fnames = None  # ["2m.p"]
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
