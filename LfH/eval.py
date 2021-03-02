@@ -50,12 +50,12 @@ def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, lin_vel, fname):
 
         pos = traj[0]
         recon_pos = recon_traj[0]
-        goal = goal * 0.2
+        goal = goal * 1.0
         lin_vel = lin_vel * 1.0
         ax.plot(pos[:, 0], pos[:, 1], pos[:, 2], label="traj")
         ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2], color="red")
         ax.plot(recon_pos[:, 0], recon_pos[:, 1], recon_pos[:, 2], label="recon_traj")
-        ax.plot(*list(zip(pos[0], pos[0] + goal)), color="orange", label="goal")
+        ax.plot(*list(zip(pos[0], pos[0] + goal)), color="black", label="goal")
         ax.plot(*list(zip(pos[0], pos[0] + lin_vel)), color="red", label="lin_vel")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
@@ -103,7 +103,7 @@ def eval(params):
     training_params = params.training_params
 
     dataset = HallucinationDataset(params, eval=True, transform=transforms.Compose([ToTensor()]))
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
     model = Hallucination(params, None).to(device)
     assert os.path.exists(training_params.load_model)
@@ -116,6 +116,9 @@ def eval(params):
              "goal": []}
     if params.Dy == 2:
         rslts["cmd"] = []
+    else:
+        rslts["lin_vel"] = []
+        rslts["ang_vel"] = []
 
     eval_dir = params.eval_dir
     eval_plots_dir = os.path.join(eval_dir, "plots")
@@ -168,7 +171,7 @@ def eval(params):
                 diff_norm = np.linalg.norm(diff, axis=-1)
                 diff_dir = diff / diff_norm[..., None]
                 radius = 1 / np.sqrt((diff_dir ** 2 / size_[None] ** 2).sum(axis=-1))
-                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 0.0).any()
+                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 0.4).any()
                 return reference_collision
 
             collision_list = Parallel(n_jobs=os.cpu_count())(
@@ -221,7 +224,7 @@ def eval(params):
 
 if __name__ == "__main__":
     load_dir = "2021-03-01-02-52-07"
-    model_fname = "model_500"
+    model_fname = "model_850"
     sample_per_traj = 8
     plot_freq = 2000
     data_fnames = None  # ["2m.p"]

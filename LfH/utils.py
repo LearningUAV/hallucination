@@ -34,7 +34,7 @@ def _set_axes_radius(ax, origin, radius):
     ax.set_zlim3d([z - radius, z + radius])
 
 
-def draw_ellipsoid(loc, size, ax, color, alpha=0.3):
+def draw_ellipsoid(loc, size, ax, color, alpha=0.2):
     x, y, z = loc
     rx, ry, rz = size
 

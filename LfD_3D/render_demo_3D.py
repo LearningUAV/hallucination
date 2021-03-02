@@ -14,16 +14,16 @@ import utils
 
 
 class Params:
-    LfH_dir = "2021-02-27-02-06-00_model_3600"
+    LfH_dir = "2021-03-01-02-52-07_model_850"
     n_render_per_sample = 1
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
     # for additional obstable generation
     n_pts_to_consider = 5
     n_additional_obs = 5
-    loc_radius = 10.0
+    loc_radius = 8.0
     loc_span = 70
-    size_min, size_max = 0.1, 0.6
+    size_min, size_max = 0.2, 0.8
     vel_time = 1.0
     vel_span = 60
 
@@ -253,7 +253,7 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, lin_vel, add_obs_loc, add_o
     ax = fig.add_subplot(111, projection="3d")
     ax.plot(pos[:, 0], pos[:, 1], pos[:, 2], label="traj")
     ax.scatter(pos[0, 0], pos[0, 1], pos[0, 2], color="red")
-    ax.plot(*list(zip(pos[0], pos[0] + goal)), color="orange", label="goal")
+    ax.plot(*list(zip(pos[0], pos[0] + goal)), color="black", label="goal")
     ax.plot(*list(zip(pos[0], pos[0] + lin_vel)), color="red", label="goal")
 
     for loc_, size_ in zip(obs_loc, obs_size):
