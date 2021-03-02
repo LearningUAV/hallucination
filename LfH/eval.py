@@ -67,7 +67,7 @@ def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, lin_vel, fname):
         angles = np.linspace(0, 360, 20, endpoint=False)  # Take 20 angles between 0 and 360
 
         # create an animated gif (20ms between frames)
-        rotanimate(ax, angles, fname + '.gif', delay=50, elevation=45, width=8, height=6)
+        # rotanimate(ax, angles, fname + '.gif', delay=50, elevation=45, width=8, height=6)
         # plt.show()
         plt.close()
 
@@ -99,7 +99,9 @@ def eval(params):
 
     params.device = device
     sample_per_traj = params.sample_per_traj
-    batch_size = 32 // sample_per_traj
+    downsample_traj = params.downsample_traj
+    n_traj_in_batch = 32 // sample_per_traj
+    batch_size = n_traj_in_batch * downsample_traj
     training_params = params.training_params
 
     dataset = HallucinationDataset(params, eval=True, transform=transforms.Compose([ToTensor()]))
@@ -128,6 +130,7 @@ def eval(params):
 
     for i_batch, sample_batched in enumerate(dataloader):
         for key, val in sample_batched.items():
+            val = val[::downsample_traj]
             sample_batched[key] = val.to(device)
 
         full_traj_tensor = repeat_tensor(sample_batched["full_traj"], sample_per_traj)
@@ -142,12 +145,13 @@ def eval(params):
             lin_vels = repeat(sample_batched["lin_vel"], sample_per_traj)
             ang_vels = repeat(sample_batched["ang_vel"], sample_per_traj)
 
-        n_samples = np.zeros(batch_size).astype(np.int)
+        n_samples = np.zeros(n_traj_in_batch).astype(np.int)
         print_n_samples = -1
-        n_invalid_samples = np.zeros(batch_size).astype(np.int)
+        n_invalid_samples = np.zeros(n_traj_in_batch).astype(np.int)
         while (n_samples < sample_per_traj).any():
             if print_n_samples != n_samples.sum():
-                print("{}/{} {}/{}".format(i_batch + 1, len(dataloader), n_samples.sum(), batch_size * sample_per_traj))
+                print("{}/{} {}/{}".format(i_batch + 1, len(dataloader),
+                                           n_samples.sum(), n_traj_in_batch * sample_per_traj))
                 print_n_samples = n_samples.sum()
 
             # check if stuck for a long time
@@ -204,7 +208,7 @@ def eval(params):
                         rslts["lin_vel"].append(lin_vel)
                         rslts["ang_vel"].append(ang_vels[j])
 
-                    sample_idx = i_batch * batch_size + idx_in_batch
+                    sample_idx = i_batch * n_traj_in_batch + idx_in_batch
                     if sample_idx % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
                         fname = os.path.join(eval_plots_dir, str(sample_idx))
                         recon_traj, _ = model.decode(reference_pts_tensor[j:j + 1],
@@ -224,10 +228,11 @@ def eval(params):
 
 if __name__ == "__main__":
     load_dir = "2021-03-01-02-52-07"
-    model_fname = "model_850"
-    sample_per_traj = 8
+    model_fname = "model_1100"
+    sample_per_traj = 1
+    downsample_traj = 4
     plot_freq = 2000
-    data_fnames = None  # ["2m.p"]
+    data_fnames = None
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
@@ -241,6 +246,7 @@ if __name__ == "__main__":
     params.params_fname = params_fname
     params.training_params.load_model = model_fname
     params.sample_per_traj = sample_per_traj
+    params.downsample_traj = downsample_traj
     params.plot_freq = plot_freq
     if data_fnames is not None:
         params.data_fnames = data_fnames
