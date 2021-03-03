@@ -37,17 +37,18 @@ class HallucinationDataset(Dataset):
         data_dir = os.path.join(repo_path, "data", "2D" if self.Dy == 2 else "3D")
 
         model_params = params.model_params
-        reference_pt_timestamp = np.arange(model_params.knot_start, model_params.knot_end) * model_params.knot_dt
+        reference_pt_timestamp = np.arange(model_params.knot_start + 2, model_params.knot_end - 2)
+        reference_pt_timestamp = reference_pt_timestamp * model_params.knot_dt
         # for reference pts
         self.reference_pt_idx = np.round(reference_pt_timestamp * self.odom_freq).astype(np.int32)
         # for full_traj
-        self.full_traj_len = self.reference_pt_idx[-1] - self.reference_pt_idx[0] + 1  # from 0 to reference_pt_idx[-1]
+        full_traj_len = self.reference_pt_idx[-1] - self.reference_pt_idx[0] + 1  # from 0 to reference_pt_idx[-1]
         # for traj (bspline order is 3)
-        self.traj_start = self.reference_pt_idx[3] - self.reference_pt_idx[0]
-        self.traj_end = self.reference_pt_idx[-4] - self.reference_pt_idx[0] + 1   # +1: for exclusion
+        self.traj_start = self.reference_pt_idx[1] - self.reference_pt_idx[0]
+        self.traj_end = self.reference_pt_idx[-2] - self.reference_pt_idx[0] + 1   # +1: for exclusion
 
         # needed in initializing hallucination model
-        model_params.full_traj_len = self.full_traj_len
+        model_params.full_traj_len = full_traj_len
         model_params.traj_len = self.traj_end - self.traj_start
 
         self.trajs = []
@@ -60,8 +61,8 @@ class HallucinationDataset(Dataset):
             self.trajs.append(data)
 
             assert len(pos) == len(vel) == len(ori)
-            self.traj_mapper.extend([traj_idx] * (len(pos) - self.full_traj_len + 1))
-            self.odom_mapper.extend(np.arange(len(pos) - self.full_traj_len + 1) - self.reference_pt_idx[0])
+            self.traj_mapper.extend([traj_idx] * (len(pos) - full_traj_len + 1))
+            self.odom_mapper.extend(np.arange(len(pos) - full_traj_len + 1) - self.reference_pt_idx[0])
             traj_idx += 1
 
         self.traj_mapper = np.array(self.traj_mapper)

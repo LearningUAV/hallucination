@@ -105,7 +105,7 @@ class Hallucination(nn.Module):
         super(Hallucination, self).__init__()
         self.params = params
         self.model_params = self.params.model_params
-        params.model_params.num_control_pts = params.model_params.knot_end - params.model_params.knot_start
+        params.model_params.num_control_pts = params.model_params.knot_end - params.model_params.knot_start - 4
         if params.optimization_params.decoder == "Neural_ODE":
             Decoder = Neural_ODE_Decoder
         elif params.optimization_params.decoder == "CVX":
