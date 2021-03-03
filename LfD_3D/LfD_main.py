@@ -107,7 +107,7 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.params = params
         model_params = self.params.model_params
-        self.num_control_pts = model_params.knot_end - model_params.knot_start
+        self.num_control_pts = model_params.knot_end - model_params.knot_start - 4
 
         self.encoder = encoder
         self.decoder = decoder
