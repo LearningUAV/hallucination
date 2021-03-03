@@ -263,14 +263,12 @@ if __name__ == '__main__':
     device = torch.device("cpu")
 
     params.device = device
-    training_params = params.training_params
-    training_params.load_model = model_path
     params.local_goal_dist = local_goal_dist
     params.laser_max_range = laser_max_range
 
     model = LfD_2D_model(params).to(device)
-    if training_params.load_model is not None and os.path.exists(training_params.load_model):
-        model.load_state_dict(torch.load(training_params.load_model, map_location=device))
+    assert os.path.exists(model_path)
+    model.load_state_dict(torch.load(model_path, map_location=device))
 
     predictor = Predictor(model, params)
 
