@@ -175,7 +175,7 @@ def eval(params):
                 diff_norm = np.linalg.norm(diff, axis=-1)
                 diff_dir = diff / diff_norm[..., None]
                 radius = 1 / np.sqrt((diff_dir ** 2 / size_[None] ** 2).sum(axis=-1))
-                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 0.4).any()
+                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 1.0).any()
                 return reference_collision
 
             collision_list = Parallel(n_jobs=os.cpu_count())(
