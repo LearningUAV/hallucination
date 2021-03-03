@@ -15,9 +15,9 @@ from skimage import transform
 import torch
 from LfD_main import TrainingParams, Encoder, Decoder, Model
 
-model_path = "2021-02-22-18-48-33"
+model_path = "2021-03-02-03-27-39"
 model_fname = "model_1000"
-update_dt = 0.04
+update_dt = 0.08
 depth_max_range = 2.0
 
 
@@ -91,7 +91,7 @@ class Predictor:
 
         depth = np.clip(depth, 0, self.max_depth)
         depth /= self.max_depth
-        depth = torch.from_numpy(depth[None]).to(self.device)
+        depth = torch.from_numpy(depth[None, None].astype(np.float32),).to(self.device)
 
         with torch.no_grad():
             bspline_local = self.model(depth, goal_local, lin_vel, ang_vel)
@@ -104,21 +104,23 @@ class Predictor:
 
 if __name__ == '__main__':
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    params_path = os.path.join(repo_path, "rslts", "LfD_2D_rslts", model_path, "params.json")
-    model_path = os.path.join(repo_path, "rslts", "LfD_2D_rslts", model_path, "trained_models", model_fname)
+    params_path = os.path.join(repo_path, "rslts", "LfD_3D_rslts", model_path, "params.json")
+    model_path = os.path.join(repo_path, "rslts", "LfD_3D_rslts", model_path, "trained_models", model_fname)
 
     params = TrainingParams(params_path, train=False)
-    device = torch.device("cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     params.device = device
 
     encoder = Encoder(params).to(device)
-    model = Model(params, encoder, encoder).to(device)
+    decoder = Decoder(params).to(device)
+    model = Model(params, encoder, decoder).to(device)
     assert os.path.exists(model_path)
     model.load_state_dict(torch.load(model_path, map_location=device))
+    print "[INFO] LfH policy loaded"
 
     predictor = Predictor(model, params)
-    rospy.init_node('ego_planner_BC', anonymous=True)
+    rospy.init_node('LfH_policy', anonymous=True)
 
     sub_goal = rospy.Subscriber("/waypoint_generator/waypoints", Path, predictor.update_goal)
     sub_depth = rospy.Subscriber("/pcl_render_node/depth", Image, predictor.update_depth, queue_size=1)
@@ -128,21 +130,24 @@ if __name__ == '__main__':
 
     traj_id = 0
     model_params = params.model_params
-    knots_fitted = np.arange(model_params.knot_start, model_params.knot_end, 1) * model_params.knot_dt
+    knots_fitted = np.arange(model_params.knot_start, model_params.knot_end, 1) * model_params.knot_dt * 1.25
+    num_control_pts = model_params.knot_end - model_params.knot_start - 3 - 1
     knots_fitted = list(knots_fitted.astype(np.float64))
     prev_msg_time = None
+    print_time = rospy.get_time()
     while not rospy.is_shutdown():
         try:
             now = rospy.get_time()
             if (prev_msg_time is None or now - prev_msg_time >= update_dt) and predictor.need_update_bspline:
                 traj_id += 1
                 bspline_msg = Bspline()
+                bspline_msg.start_time = rospy.Time.now()
                 bspline_msg.order = 3
                 bspline_msg.traj_id = traj_id
-                bspline_msg.start_time = rospy.Time.now()
                 bspline_msg.knots = knots_fitted
                 pos_pts = []
                 bspline = predictor.update_bspline()
+                bspline = bspline[:num_control_pts]
                 for control_pt in bspline:
                     pt = Point()
                     pt.x, pt.y, pt.z = control_pt.astype(np.float64)
@@ -150,7 +155,9 @@ if __name__ == '__main__':
                 bspline_msg.pos_pts = pos_pts
                 bspline_pub.publish(bspline_msg)
 
-                if prev_msg_time is not None
+                if prev_msg_time is not None and now - print_time > 1:
+                    print_time = now
+                    print "[INFO] Update bspline, frequency = %d Hz" % int(1.0 / (now - prev_msg_time))
                 predictor.need_update_bspline = False
                 prev_msg_time = now
         except rospy.exceptions.ROSInterruptException:

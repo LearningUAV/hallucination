@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env python
 
 import os
 import roslaunch
@@ -6,7 +6,7 @@ import rospy
 import rosnode
 import numpy as np
 import matplotlib.pyplot as plt
-from std_msgs.msg import String, ChannelFloat32
+from sensor_msgs.msg import ChannelFloat32
 
 
 uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
@@ -31,21 +31,24 @@ def callback(msg):
         curr_distance = distance
 
 
-c_num = 200
-p_num = 200
+c_num = 400
+p_num = 400
+random_forest = True
 use_LfH = True
 rospy.init_node("duration_listener", anonymous=True)
-rospy.Subscriber("duration", ChannelFloat32, callback)
+rospy.Subscriber("collision_status", ChannelFloat32, callback)
 
 
-for i in range(10):
+for i in range(1):
     curr_duration = 0.0
     curr_distance = 0.0
     trial_running = True
 
-    args_list = ["$(find LfH)/ego_time/run_in_sim_test.launch", "c_num:=" + str(c_num), "seed:=" + str(i),
-                 "bspline_topic:=" + "/planning/bspline_truth" if use_LfH else "/planning/bspline",
-                 "run_LfH:=" + "true" if use_LfH else "false"]
+    args_list = ["run_in_sim_test.launch", "c_num:=" + str(c_num), "seed:=" + str(i),
+                 "bspline_topic:=" + str("/planning/bspline_truth" if use_LfH else "/planning/bspline"),
+                 "use_lfh:=" + str("true" if use_LfH else "false"),
+                 "random_forest:=" + str("true" if random_forest else "false"),
+                 ]
     lifelong_args = args_list[1:]
     launch_files = [(roslaunch.rlutil.resolve_launch_arguments(args_list)[0], lifelong_args)]
 
@@ -64,4 +67,4 @@ for i in range(10):
     if not trial_running:
         fout.write("%d\n%f\n%f\n" % (i, curr_duration, curr_distance))
     fout.close()
-    print("Finished %d" % i)
+    print "Finished %d" % i

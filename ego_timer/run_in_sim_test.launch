@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <launch>
   <!-- size of map, change the size inflate x, y, z according to your application -->
-  <arg name="seed" value="0"/>
-  <arg name="run_LfH" default="true"/>
-  <arg name="c_num" value="200"/>
-  <arg name="p_num" value="200"/>
-  <arg name="map_size_x" value="40.0"/>
-  <arg name="map_size_y" value="40.0"/>
-  <arg name="map_size_z" value=" 3.0"/>
+  <arg name="seed" default="0"/>
+  <arg name="use_lfh" default="true"/>
+  <arg name="use_ego" value="$(eval not arg('use_lfh'))"/>
+  <arg name="random_forest" default="false"/>
+  <arg name="c_num" default="200"/>
+  <arg name="p_num" default="200"/>
+  <arg name="map_size_x" default="40.0"/>
+  <arg name="map_size_y" default="40.0"/>
+  <arg name="map_size_z" default=" 3.0"/>
 
   <!-- topic of your odometry such as VIO or LIO -->
   <arg name="odom_topic" value="/visual_slam/odom" />
-  <arg name="bspline_topic" value="/planning/bspline_truth"/>
+  <arg name="bspline_topic" default="/planning/bspline_truth"/>
 
   <!-- main algorithm params -->
   <include file="$(find ego_planner)/launch/advanced_param.xml">
@@ -21,6 +23,7 @@
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
     <arg name="odometry_topic" value="$(arg odom_topic)"/>
     <arg name="bspline_topic" value="$(arg bspline_topic)"/>
+    <arg name="use_ego" value="$(arg use_ego)"/>
 
     <!-- camera pose: transform of camera frame in the world frame -->
     <!-- depth topic: depth image, 640x480 by default -->
@@ -98,7 +101,8 @@
     <arg name="c_num" value="$(arg c_num)"/>
     <arg name="p_num" value="$(arg p_num)"/>
     <arg name="min_dist" value="1"/>
-    <arg name="seed" value="1"/>
+    <arg name="seed" value="$(arg seed)"/>
+    <arg name="random_forest" value="$(arg random_forest)"/>
 
     <arg name="odometry_topic" value="$(arg odom_topic)" />
   </include>
@@ -106,7 +110,7 @@
   <node pkg="LfH" type="collision_check.py" name="collision_checker" output="screen" args="--seed $(arg seed)">
   </node>
 
-  <node pkg="LfH" type="run_policy_3D.py" name="LfH_3D_policy" output="screen" required="true" if="(arg run_LfH)">
+  <node pkg="LfH" type="run_policy_3D.py" name="LfH_3D_policy" output="screen" required="true" if="$(arg use_lfh)">
   </node>
 
 </launch>
