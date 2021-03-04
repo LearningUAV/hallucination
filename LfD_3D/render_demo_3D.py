@@ -218,7 +218,7 @@ def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, params):
 
     pos = np.zeros((image_v, image_h, 3)).astype(np.float32)
     h_ratio = (np.flip(np.arange(image_h)) - 0.5 / image_scale - ch) / fh
-    v_ratio = (np.flip(np.arange(image_v)) - 0.25 / image_scale - cv) / fv
+    v_ratio = (np.flip(np.arange(image_v)) - 0.5 / image_scale - cv) / fv
     h_ratio, v_ratio = h_ratio.astype(np.float32), v_ratio.astype(np.float32)
     h_grid, v_grid = np.meshgrid(h_ratio, v_ratio)
     dir = np.stack([np.ones((image_v, image_h), dtype=np.float32), h_grid, v_grid], axis=-1)
