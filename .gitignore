@@ -10,6 +10,7 @@ LfH_eval
 tmp
 nohup*
 *.txt
+*.csv
 
 
 
