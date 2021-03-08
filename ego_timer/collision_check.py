@@ -11,12 +11,15 @@ import random
 import argparse
 import numpy as np
 
+GOAL_CHECKING_THRESHOLD = 2
+
 
 class CollisionChecker(object):
     """
     The input is a 480x640 frame, we use a 100x100 pixel square
     and check if object is in that square range
     """
+
     def __init__(self, init_pos):
         rospy.init_node("listener", anonymous=True)
         sub_odom = rospy.Subscriber("/visual_slam/odom", Odometry, self.update_odom, queue_size=1)
@@ -25,6 +28,8 @@ class CollisionChecker(object):
         self.pos = init_pos
         self.is_collide = False
         self.distance = 0
+        self.collision_half_size = 30
+        self.collision_threshold = 500
 
     def update_odom(self, msg):
         pos = msg.pose.pose.position
@@ -35,10 +40,12 @@ class CollisionChecker(object):
     def update_collision(self, msg):
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
         depth = np.asarray(cv_image)
-        depth_center = depth[190:290, 270:370]
+        hs = self.collision_half_size
+        u, d, l, r = 240 - hs, 240 + hs, 320 - hs, 320 + hs
+        depth_center = depth[u:d, l:r]
         collision_mask = (depth_center > 0) & (depth_center < 0.25)
 
-        if np.sum(collision_mask) >= 500:
+        if np.sum(collision_mask) >= self.collision_threshold:
             self.is_collide = True
 
 
@@ -55,9 +62,9 @@ class WaypointSender(object):
 
     def update_status(self, msg):
         pos = msg.pose.pose.position
-        pos = np.array([pos.x, pos.y, pos.z])
+        pos = np.array([pos.x, pos.y])
 
-        if self.goal is None or np.linalg.norm(pos - self.goal) < 2:
+        if self.goal is None or np.linalg.norm(pos - self.goal) < GOAL_CHECKING_THRESHOLD:
             self.publish_waypoint()
 
     def publish_waypoint(self):
@@ -68,11 +75,10 @@ class WaypointSender(object):
         while True:
             cur_x = random.uniform(self.map_x_size / -2, self.map_x_size / 2)
             cur_y = random.uniform(self.map_y_size / -2, self.map_y_size / 2)
-            if self.goal is None:
+            cur_pos = np.array([cur_x, cur_y])
+            if self.goal is None or np.linalg.norm(cur_pos - self.goal) > 20:
                 break
-            if cur_x * self.goal[0] < 0 or cur_y * self.goal[1] < 0:
-                break
-        self.goal = np.array([cur_x, cur_y, 0])
+        self.goal = cur_pos
         waypoint_msg.pose.position.x = cur_x
         waypoint_msg.pose.position.y = cur_y
         waypoint_msg.pose.position.z = 0
