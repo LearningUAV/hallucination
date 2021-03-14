@@ -1,6 +1,7 @@
 import os
 import torch
 import pickle
+import shutil
 import numpy as np
 from skimage import transform
 
@@ -34,11 +35,17 @@ class Demo_3D_Dataset(Dataset):
         self.lin_vel = []
         self.ang_vel = []
         repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        demo_params_dir = os.path.join(params.rslts_dir, "demo_params")
+        os.makedirs(demo_params_dir, exist_ok=True)
         for demo_dir in params.demo_dirs:
-            demo_dir = os.path.join(repo_path, "LfH_demo", demo_dir)
+            demo_dir_ = os.path.join(repo_path, "LfH_demo", demo_dir)
 
-            with open(os.path.join(demo_dir, "LfH_demo.p"), "rb") as f:
+            with open(os.path.join(demo_dir_, "LfH_demo.p"), "rb") as f:
                 d = pickle.load(f)
+            shutil.copyfile(os.path.join(demo_dir_, "eval_params.json"),
+                            os.path.join(demo_params_dir, "{}_eval_params.json".format(demo_dir)))
+            shutil.copyfile(os.path.join(demo_dir_, "demo_params.json"),
+                            os.path.join(demo_params_dir, "{}_demo_params.json".format(demo_dir)))
 
             depth = d["depth"]
             goal = d["goal"]

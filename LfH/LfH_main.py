@@ -22,7 +22,7 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
-class TrainingParams:
+class TrainingParams(AttrDict):
     def __init__(self, training_params_fname="params.json", train=True):
         config = json.load(open(training_params_fname))
         for k, v in config.items():
@@ -38,18 +38,20 @@ class TrainingParams:
             os.makedirs(self.rslts_dir)
             shutil.copyfile(training_params_fname, os.path.join(self.rslts_dir, "params.json"))
 
+        super(TrainingParams, self).__init__(self.__dict__)
+
     def _clean_dict(self, _dict):
         for k, v in _dict.items():
             if v == "":  # encode empty string as None
                 v = None
             if isinstance(v, dict):
-                v = AttrDict(self._clean_dict(v))
+                v = self._clean_dict(v)
             _dict[k] = v
-        return _dict
+        return AttrDict(_dict)
 
 
 def train(params):
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 
     params.device = device
     training_params = params.training_params

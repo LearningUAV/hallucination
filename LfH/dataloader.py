@@ -43,13 +43,14 @@ class HallucinationDataset(Dataset):
         self.reference_pt_idx = np.round(reference_pt_timestamp * self.odom_freq).astype(np.int32)
         # for full_traj
         full_traj_len = self.reference_pt_idx[-1] - self.reference_pt_idx[0] + 1  # from 0 to reference_pt_idx[-1]
+        full_traj_len = full_traj_len
         # for traj (bspline order is 3)
         self.traj_start = self.reference_pt_idx[1] - self.reference_pt_idx[0]
         self.traj_end = self.reference_pt_idx[-2] - self.reference_pt_idx[0] + 1   # +1: for exclusion
 
         # needed in initializing hallucination model
-        model_params.full_traj_len = full_traj_len
-        model_params.traj_len = self.traj_end - self.traj_start
+        model_params.full_traj_len = int(full_traj_len)
+        model_params.traj_len = int(self.traj_end - self.traj_start)
 
         self.trajs = []
         self.traj_mapper = []

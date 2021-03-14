@@ -1,4 +1,5 @@
 import os
+import json
 import pickle
 import shutil
 import numpy as np
@@ -13,7 +14,7 @@ import torchvision.transforms as transforms
 from model import Hallucination
 from dataloader import HallucinationDataset, ToTensor
 from utils import to_numpy, set_axes_equal, draw_ellipsoid, rotanimate
-from LfH_main import TrainingParams
+from LfH_main import TrainingParams, AttrDict
 
 
 def plot_eval_rslts(loc, size, traj, recon_traj, cmd, goal, lin_vel, fname):
@@ -95,17 +96,18 @@ def repeat_tensor(input, repeat_time):
 
 
 def eval(params):
-    device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     params.device = device
-    sample_per_traj = params.sample_per_traj
-    downsample_traj = params.downsample_traj
+    eval_params = params.eval_params
+    training_params = params.training_params
+    sample_per_traj = eval_params.sample_per_traj
+    downsample_traj = eval_params.downsample_traj
     n_traj_in_batch = 32 // sample_per_traj
     batch_size = n_traj_in_batch * downsample_traj
-    training_params = params.training_params
 
     dataset = HallucinationDataset(params, eval=True, transform=transforms.Compose([ToTensor()]))
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=4)
 
     model = Hallucination(params, None).to(device)
     assert os.path.exists(training_params.load_model)
@@ -122,10 +124,11 @@ def eval(params):
         rslts["lin_vel"] = []
         rslts["ang_vel"] = []
 
-    eval_dir = params.eval_dir
+    eval_dir = eval_params.eval_dir
     eval_plots_dir = os.path.join(eval_dir, "plots")
     os.makedirs(eval_plots_dir, exist_ok=True)
-    shutil.copyfile(params.params_fname, os.path.join(eval_dir, "params.json"))
+    params.pop("device")
+    json.dump(params, open(os.path.join(eval_dir, "params.json"), "w"), indent=4)
     shutil.copyfile(training_params.load_model, os.path.join(eval_dir, "model"))
 
     for i_batch, sample_batched in enumerate(dataloader):
@@ -157,7 +160,7 @@ def eval(params):
             # check if stuck for a long time
             need_break = True
             for n_valid, n_invalid in zip(n_samples, n_invalid_samples):
-                if n_valid < sample_per_traj and n_invalid < sample_per_traj * 3:
+                if n_valid < sample_per_traj and n_invalid < sample_per_traj * eval_params.max_sample_trials:
                     need_break = False
                     break
             if need_break:
@@ -175,7 +178,8 @@ def eval(params):
                 diff_norm = np.linalg.norm(diff, axis=-1)
                 diff_dir = diff / diff_norm[..., None]
                 radius = 1 / np.sqrt((diff_dir ** 2 / size_[None] ** 2).sum(axis=-1))
-                reference_collision = (diff_norm - radius <= params.optimization_params.clearance * 1.0).any()
+                reference_collision = (diff_norm - radius <=
+                                       params.optimization_params.clearance * eval_params.clearance_scale).any()
                 return reference_collision
 
             collision_list = Parallel(n_jobs=os.cpu_count())(
@@ -209,7 +213,7 @@ def eval(params):
                         rslts["ang_vel"].append(ang_vels[j])
 
                     sample_idx = i_batch * n_traj_in_batch + idx_in_batch
-                    if sample_idx % params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
+                    if sample_idx % eval_params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
                         fname = os.path.join(eval_plots_dir, str(sample_idx))
                         recon_traj, _ = model.decode(reference_pts_tensor[j:j + 1],
                                                      loc_tensors[j:j + 1], size_tensors[j:j + 1])
@@ -227,12 +231,14 @@ def eval(params):
 
 
 if __name__ == "__main__":
-    load_dir = "2021-03-01-02-52-07"
-    model_fname = "model_1100"
+    load_dir = "2021-03-12-14-42-45"
+    model_fname = "model_1800"
     sample_per_traj = 1
     downsample_traj = 4
     plot_freq = 2000
     data_fnames = None
+    clearance_scale = 0.5
+    max_sample_trials = 10
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     eval_dir = os.path.join(repo_path, "LfH_eval", "{}_{}".format(load_dir, model_fname))
@@ -242,12 +248,15 @@ if __name__ == "__main__":
 
     params = TrainingParams(params_fname, train=False)
 
-    params.eval_dir = eval_dir
-    params.params_fname = params_fname
     params.training_params.load_model = model_fname
-    params.sample_per_traj = sample_per_traj
-    params.downsample_traj = downsample_traj
-    params.plot_freq = plot_freq
+    params.eval_params = eval_params = AttrDict()
+    eval_params.eval_dir = eval_dir
+    eval_params.params_fname = params_fname
+    eval_params.sample_per_traj = sample_per_traj
+    eval_params.downsample_traj = downsample_traj
+    eval_params.plot_freq = plot_freq
+    eval_params.clearance_scale = clearance_scale
+    eval_params.max_sample_trials = max_sample_trials
     if data_fnames is not None:
         params.data_fnames = data_fnames
 

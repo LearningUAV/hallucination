@@ -1,4 +1,5 @@
 import os
+import json
 import pickle
 import shutil
 import numpy as np
@@ -15,45 +16,51 @@ import utils
 
 
 class Params:
-    LfH_dir = "2021-03-01-02-52-07_model_1100"
-    n_render_per_sample = 1
-    device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+    def __init__(self):
+        self.LfH_dir = "2021-03-12-14-44-11_model_2000"
+        self.n_render_per_sample = 1
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # for additional obstable generation
-    n_pts_to_consider = 5
-    n_additional_obs = 5
-    loc_radius = 8.0
-    loc_span = 80
-    size_min, size_max = 0.2, 0.8
-    vel_time = 1.0
-    vel_span = 60
+        # for additional obstable generation
+        self.n_pts_to_consider = 5
+        self.n_additional_obs = 5
+        self.loc_radius = 8.0
+        self.loc_span = 80
+        self.size_min, self.size_max = 0.2, 0.8
+        self.vel_time = 1.0
+        self.vel_span = 60
 
-    # for observation rendering
-    batch_size = 128
-    image_scale = 2.0
-    image_h = 640
-    image_v = 480
-    max_depth = 1000
-    fh = 387.229248046875       # from ego-planner
-    fv = 387.229248046875
-    ch = 321.04638671875
-    cv = 243.44969177246094
-    plot_freq = 200
-    ego_depth = True
+        # for observation rendering
+        self.batch_size = 128
+        self.image_scale = image_scale = 2.0
+        self.image_h = 640
+        self.image_v = 480
+        self.max_depth = 1000
+        self.fh = 387.229248046875       # from ego-planner
+        self.fv = 387.229248046875
+        self.ch = 321.04638671875
+        self.cv = 243.44969177246094
+        self.plot_freq = 200
+        self.ego_depth = True
 
-    # post process params
-    batch_size = batch_size // n_render_per_sample
-    loc_span = loc_span * np.pi / 180
-    vel_span = vel_span * np.pi / 180
+        # post process params
+        self.batch_size //= self.n_render_per_sample
+        self.loc_span *= np.pi / 180
+        self.vel_span *= np.pi / 180
 
-    image_h = int(image_h / image_scale)
-    image_v = int(image_v / image_scale)
-    fh /= image_scale
-    fv /= image_scale
-    ch /= image_scale
-    cv /= image_scale
-    if ego_depth:
-        max_depth = max(max_depth, 500.0)
+        self.image_h = int(self.image_h / image_scale)
+        self.image_v = int(self.image_v / image_scale)
+        self.fh /= image_scale
+        self.fv /= image_scale
+        self.ch /= image_scale
+        self.cv /= image_scale
+        if self.ego_depth:
+            self.max_depth = max(self.max_depth, 500.0)
+
+    def to_dict(self):
+        params_dict = params.__dict__
+        params_dict.pop("device")
+        return params_dict
 
 
 def angle_diff(angle1, angle2):
@@ -291,7 +298,8 @@ if __name__ == "__main__":
     LfH_dir = os.path.join(repo_path, "LfH_eval", params.LfH_dir)
 
     os.makedirs(demo_dir, exist_ok=True)
-    shutil.copyfile(os.path.join(LfH_dir, "params.json"), os.path.join(demo_dir, "params.json"))
+    json.dump(params.to_dict(), open(os.path.join(demo_dir, "demo_params.json"), "w"), indent=4)
+    shutil.copyfile(os.path.join(LfH_dir, "params.json"), os.path.join(demo_dir, "eval_params.json"))
     shutil.copyfile(os.path.join(LfH_dir, "model"), os.path.join(demo_dir, "model"))
 
     with open(os.path.join(LfH_dir, "LfH_eval.p"), "rb") as f:
