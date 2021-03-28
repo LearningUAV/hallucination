@@ -153,10 +153,18 @@ class Model(nn.Module):
         return outputs
 
     def BC_loss(self, control_pts, traj):
+        vel = control_pts[:, 1:] - control_pts[:, :-1]
+        acc = vel[:, 1:] - vel[:, :-1]
+        jerk = vel[:, 1:] - vel[:, :-1]
+        smoothness_loss = torch.mean(torch.sum(acc ** 2, dim=(1, 2)) + torch.sum(jerk ** 2, dim=(1, 2)))
+        smoothness_loss *= self.params.model_params.lambda_smoothness
+
         control_pts = control_pts.view(-1, 1, self.num_control_pts, 3)      # (batch_size, 1, num_control_pts, 3)
         reconst_traj = torch.matmul(self.coef, control_pts)                 # (batch_size, 2, T, 3)
-        MSE = torch.mean(torch.sum((reconst_traj - traj) ** 2, dim=(1, 2, 3)))
-        return MSE
+        reconst_loss = torch.mean(torch.sum((reconst_traj - traj) ** 2, dim=(1, 2, 3)))
+
+        BC_loss = reconst_loss + smoothness_loss
+        return BC_loss, (reconst_loss, smoothness_loss)
 
     def reconstruct(self, image):
         image_h = self.encoder(image)
@@ -218,6 +226,7 @@ def train(params):
 
     for epoch in range(training_params.epochs):
         train_BC_loss, test_BC_loss = [], []
+        train_smooth_loss, test_smooth_loss = [], []
         train_AE_loss, test_AE_loss = [], []
         model.train(training=True)
         for i_batch, sample_batched in enumerate(train_dataloader):
@@ -230,27 +239,27 @@ def train(params):
             lin_vel = sample_batched["lin_vel"]
             ang_vel = sample_batched["ang_vel"]
 
-            with torch.autograd.set_detect_anomaly(True):
-                optimizer.zero_grad()
-                control_pts = model(depth, goal, lin_vel, ang_vel, reconstruct_depth=use_AE)
-                if use_AE:
-                    control_pts, reconstructed_depth = control_pts
+            optimizer.zero_grad()
+            control_pts = model(depth, goal, lin_vel, ang_vel, reconstruct_depth=use_AE)
+            if use_AE:
+                control_pts, reconstructed_depth = control_pts
 
-                BC_loss = model.BC_loss(control_pts, traj)
-                BC_loss.backward(retain_graph=use_AE)
-                if use_AE and use_pretrained_AE and epoch < params.AE_frozen_epoch:
-                    encoder.zero_grad()
+            BC_loss, (reconst_loss, smoothness_loss) = model.BC_loss(control_pts, traj)
+            BC_loss.backward(retain_graph=use_AE)
+            if use_AE and use_pretrained_AE and epoch < params.AE_frozen_epoch:
+                encoder.zero_grad()
 
-                if use_AE:
-                    AE_loss = torch.mean(torch.sum((depth - reconstructed_depth) ** 2, dim=(1, 2, 3)))
-                    if not use_pretrained_AE or epoch >= params.AE_frozen_epoch:
-                        AE_loss.backward()
-                    train_AE_loss.append(AE_loss.item())
-                    train_depth, train_reconstructed_depth = depth, reconstructed_depth
+            if use_AE:
+                AE_loss = torch.mean(torch.sum((depth - reconstructed_depth) ** 2, dim=(1, 2, 3)))
+                if not use_pretrained_AE or epoch >= params.AE_frozen_epoch:
+                    AE_loss.backward()
+                train_AE_loss.append(AE_loss.item())
+                train_depth, train_reconstructed_depth = depth, reconstructed_depth
 
-                optimizer.step()
+            optimizer.step()
 
-            train_BC_loss.append(BC_loss.item())
+            train_BC_loss.append(reconst_loss.item())
+            train_smooth_loss.append(smoothness_loss.item())
 
             print("{}/{}, {}/{}".format(epoch + 1, training_params.epochs,
                                         i_batch + 1, training_params.batch_per_epoch))
@@ -271,8 +280,9 @@ def train(params):
                 control_pts = model(depth, goal, lin_vel, ang_vel, reconstruct_depth=use_AE)
                 if use_AE:
                     control_pts, reconstructed_depth = control_pts
-                BC_loss = model.BC_loss(control_pts, traj)
-                test_BC_loss.append(BC_loss.item())
+                BC_loss, (reconst_loss, smoothness_loss) = model.BC_loss(control_pts, traj)
+                test_BC_loss.append(reconst_loss.item())
+                test_smooth_loss.append(smoothness_loss.item())
 
                 if use_AE:
                     AE_loss = torch.mean(torch.sum((depth - reconstructed_depth) ** 2, dim=(1, 2, 3)))
@@ -283,6 +293,8 @@ def train(params):
         if writer is not None:
             writer.add_scalar("train/BC loss", np.mean(train_BC_loss), epoch)
             writer.add_scalar("test/BC loss", np.mean(test_BC_loss), epoch)
+            writer.add_scalar("train/smoothness loss", np.mean(train_smooth_loss), epoch)
+            writer.add_scalar("test/smoothness loss", np.mean(test_smooth_loss), epoch)
             if use_AE:
                 writer.add_scalar("train/AE loss", np.mean(train_AE_loss), epoch)
                 writer.add_scalar("test/AE loss", np.mean(test_AE_loss), epoch)
