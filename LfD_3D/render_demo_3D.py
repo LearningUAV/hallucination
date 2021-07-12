@@ -41,7 +41,9 @@ class Params:
         self.ch = 321.04638671875
         self.cv = 243.44969177246094
         self.plot_freq = 200
-        self.ego_depth = True
+        self.convert_infi_depth_to_zero = True
+        self.proj_to_x = True
+        self.render_ground = True
 
         # post process params
         self.batch_size //= self.n_render_per_sample
@@ -54,7 +56,7 @@ class Params:
         self.fv /= image_scale
         self.ch /= image_scale
         self.cv /= image_scale
-        if self.ego_depth:
+        if self.convert_infi_depth_to_zero:
             self.max_depth = max(self.max_depth, 500.0)
 
     def to_dict(self):
@@ -98,7 +100,7 @@ def find_raycast(pos, dir, loc, size, params, proj_to_x=False):
     return ray
 
 
-def find_raycast_torch(pos, dir, loc, size, params, proj_to_x=False):
+def find_raycast_torch(pos, dir, loc, size, params):
     """
 
     :param pos: (Bs1, ..., BsN, 3)
@@ -126,9 +128,31 @@ def find_raycast_torch(pos, dir, loc, size, params, proj_to_x=False):
         zero_ray_mask = (l1 < 0) & (l2 > 0)
         gt_zero_ray_mask = l1 >= 0
         ray[delta_mask & zero_ray_mask] = 0
-        if proj_to_x:
+        if params.proj_to_x:
             l1 = l1 * dir[..., 0]
         ray[delta_mask & gt_zero_ray_mask] = l1[delta_mask & gt_zero_ray_mask]
+    return ray.cpu().numpy()
+
+
+def find_ground_torch(dir, ground_normal, height, params):
+    """
+
+    :param dir: (Bs1, ..., BsN, 3)
+    :param ground_normal: (3,)
+    :param v: (1,)
+    :return: (Bs1, ..., BsN)
+    """
+    dir = torch.from_numpy(dir).to(params.device)
+    ray = torch.full(dir.shape[:-1], params.max_depth, dtype=torch.float32).to(params.device)
+
+    with torch.no_grad():
+        cos = (dir * ground_normal).sum(dim=-1)
+        sin = torch.sqrt(1 - cos ** 2)
+        gt_zero_ray_mask = cos > 0
+        l = height * sin / cos
+        if params.proj_to_x:
+            l = l * dir[..., 0]
+        ray[gt_zero_ray_mask] = l[gt_zero_ray_mask]
     return ray.cpu().numpy()
 
 
@@ -235,9 +259,16 @@ def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, params):
     dir = dir[None, :, :, None]             # (batch_size, image_v, image_h, 1, 3)
     locs = locs[:, None, None]              # (1, image_v, image_h, n_obs, 3)
     sizes = sizes[:, None, None]            # (1, image_v, image_h, n_obs, 3)
-    depth = find_raycast_torch(pos, dir, locs, sizes, params, proj_to_x=params.ego_depth)
-    depth = depth.min(axis=-1)
-    if params.ego_depth:
+    depth = find_raycast_torch(pos, dir, locs, sizes, params)       # (batch_size, image_v, image_h, n_obs)
+    depth = depth.min(axis=-1)                                      # (batch_size, image_v, image_h)
+    if params.render_ground:
+        ground_normal = np.array([np.random.uniform(-0.2, 0.2), np.random.uniform(-0.2, 0.2), -1])
+        ground_normal /= np.linalg.norm(ground_normal)
+        height = np.random.uniform(0.5, 2.0)
+        dir = dir[..., 0, :]                                        # (batch_size, image_v, image_h, 3)
+        ground_depth = find_ground_torch(dir, ground_normal, height, params)
+        depth = np.minimum(depth, ground_depth)
+    if params.convert_infi_depth_to_zero:
         depth = np.where(depth < 500.0, depth, 0)
     return depth
 
