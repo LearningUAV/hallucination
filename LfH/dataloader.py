@@ -122,7 +122,7 @@ class HallucinationDataset(Dataset):
                 lin_vel = vel_label[0]
                 ang_vel = ang_vel[odom_idx + self.reference_pt_idx[0] + self.traj_start]
                 ang_vel = r.apply(ang_vel)
-                data.update({"lin_vel": lin_vel, "ang_vel": ang_vel})
+                data.update({"lin_vel": lin_vel, "ang_vel": ang_vel, "ori_base": ori_base})
 
         if self.transform:
             data = self.transform(data)

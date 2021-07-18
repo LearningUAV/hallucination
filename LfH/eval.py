@@ -123,6 +123,7 @@ def eval(params):
     else:
         rslts["lin_vel"] = []
         rslts["ang_vel"] = []
+        rslts["ori_base"] = []
 
     eval_dir = eval_params.eval_dir
     eval_plots_dir = os.path.join(eval_dir, "plots")
@@ -130,6 +131,7 @@ def eval(params):
     params.pop("device")
     json.dump(params, open(os.path.join(eval_dir, "params.json"), "w"), indent=4)
     shutil.copyfile(training_params.load_model, os.path.join(eval_dir, "model"))
+    params.device = device
 
     for i_batch, sample_batched in enumerate(dataloader):
         for key, val in sample_batched.items():
@@ -147,6 +149,7 @@ def eval(params):
         else:
             lin_vels = repeat(sample_batched["lin_vel"], sample_per_traj)
             ang_vels = repeat(sample_batched["ang_vel"], sample_per_traj)
+            ori_bases = repeat(sample_batched["ori_base"], sample_per_traj)
 
         n_samples = np.zeros(n_traj_in_batch).astype(np.int)
         print_n_samples = -1
@@ -211,6 +214,8 @@ def eval(params):
                         rslts["goal"].append(goal)
                         rslts["lin_vel"].append(lin_vel)
                         rslts["ang_vel"].append(ang_vels[j])
+                        rslts["ori_base"].append(ori_bases[j])
+
 
                     sample_idx = i_batch * n_traj_in_batch + idx_in_batch
                     if sample_idx % eval_params.plot_freq == 0 and n_samples[idx_in_batch] == 1:
@@ -231,13 +236,13 @@ def eval(params):
 
 
 if __name__ == "__main__":
-    load_dir = "2021-03-12-14-42-45"
-    model_fname = "model_1800"
+    load_dir = "2021-07-12-12-02-34"
+    model_fname = "model_2000"
     sample_per_traj = 1
     downsample_traj = 4
     plot_freq = 2000
     data_fnames = None
-    clearance_scale = 0.5
+    clearance_scale = 0.6
     max_sample_trials = 10
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
