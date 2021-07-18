@@ -51,7 +51,7 @@ class TrainingParams(AttrDict):
 
 
 def train(params):
-    device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
     params.device = device
     training_params = params.training_params
@@ -99,8 +99,12 @@ def train(params):
             optimizer.zero_grad()
             recon_traj, recon_control_points, loc_mu, loc_log_var, loc, size_mu, size_log_var, size = \
                 model(full_traj, reference_pts, decode=True)
-            loss, loss_detail = model.loss(full_traj, traj, recon_traj, reference_pts,
-                                           loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
+            try:
+                loss, loss_detail = model.loss(full_traj, traj, recon_traj, reference_pts,
+                                               loc_mu, loc_log_var, loc, size_mu, size_log_var, size)
+            except AssertionError:
+                continue
+
             loss.backward()
             print(loss_detail)
             optimizer.step()
