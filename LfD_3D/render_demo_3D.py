@@ -17,13 +17,13 @@ import utils
 
 class Params:
     def __init__(self):
-        self.LfH_dir = "2021-03-12-14-44-11_model_2000"
+        self.LfH_dir = "2021-07-12-12-02-34_model_2000"
         self.n_render_per_sample = 1
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         # for additional obstable generation
         self.n_pts_to_consider = 5
-        self.n_additional_obs = 5
+        self.n_additional_obs = 0
         self.loc_radius = 8.0
         self.loc_span = 80
         self.size_min, self.size_max = 0.2, 0.8
@@ -32,14 +32,14 @@ class Params:
 
         # for observation rendering
         self.batch_size = 128
-        self.image_scale = image_scale = 2.0
-        self.image_h = 640
-        self.image_v = 480
+        self.image_scale = image_scale = 1.0
+        self.image_h = 320
+        self.image_v = 240
         self.max_depth = 1000
-        self.fh = 387.229248046875       # from ego-planner
-        self.fv = 387.229248046875
-        self.ch = 321.04638671875
-        self.cv = 243.44969177246094
+        self.fh = 282.8       # from ego-planner
+        self.fv = 282.7
+        self.ch = 160
+        self.cv = 120
         self.plot_freq = 200
         self.convert_infi_depth_to_zero = True
         self.proj_to_x = True
@@ -60,7 +60,8 @@ class Params:
             self.max_depth = max(self.max_depth, 500.0)
 
     def to_dict(self):
-        params_dict = params.__dict__
+        import copy
+        params_dict = copy.deepcopy(params.__dict__)
         params_dict.pop("device")
         return params_dict
 
@@ -137,21 +138,23 @@ def find_raycast_torch(pos, dir, loc, size, params):
 def find_ground_torch(dir, ground_normal, height, params):
     """
 
-    :param dir: (Bs1, ..., BsN, 3)
-    :param ground_normal: (3,)
-    :param v: (1,)
-    :return: (Bs1, ..., BsN)
+    :param dir: (1, image_w, image_h, 3)
+    :param ground_normal: (batch_size, 1, 1, 3)
+    :param height: (batch_size, 1, 1)
+    :return: (batch_size, image_w, image_h)
     """
     dir = torch.from_numpy(dir).to(params.device)
-    ray = torch.full(dir.shape[:-1], params.max_depth, dtype=torch.float32).to(params.device)
+    ground_normal = torch.from_numpy(ground_normal).to(params.device)
+    height = torch.from_numpy(height).to(params.device)
 
     with torch.no_grad():
         cos = (dir * ground_normal).sum(dim=-1)
-        sin = torch.sqrt(1 - cos ** 2)
+        ray = torch.full(cos.shape, params.max_depth, dtype=torch.float32).to(params.device)
         gt_zero_ray_mask = cos > 0
-        l = height * sin / cos
+        l = height / cos
         if params.proj_to_x:
             l = l * dir[..., 0]
+        l = torch.clip(l, max=params.max_depth)
         ray[gt_zero_ray_mask] = l[gt_zero_ray_mask]
     return ray.cpu().numpy()
 
@@ -221,13 +224,14 @@ def generate_additional_obs(traj, params):
     return np.array(locs), np.array(sizes)
 
 
-def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, params):
+def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, ori_base, params):
     """
 
     :param obs_loc: (Bs, N, 3)
     :param obs_size: (Bs, N, 3)
     :param add_obs_loc: (Bs, M, 3)
     :param add_obs_size: (Bs, M, 3)
+    :param ori_base: (Bs, 4)
     :param params:
     :return:
     """
@@ -255,17 +259,19 @@ def render_depth(obs_loc, obs_size, add_obs_loc, add_obs_size, params):
     dir = np.stack([np.ones((image_v, image_h), dtype=np.float32), h_grid, v_grid], axis=-1)
     dir /= np.linalg.norm(dir, axis=-1, keepdims=True)
 
-    pos = pos[None, :, :, None]             # (batch_size, image_v, image_h, 1, 3)
-    dir = dir[None, :, :, None]             # (batch_size, image_v, image_h, 1, 3)
-    locs = locs[:, None, None]              # (1, image_v, image_h, n_obs, 3)
-    sizes = sizes[:, None, None]            # (1, image_v, image_h, n_obs, 3)
-    depth = find_raycast_torch(pos, dir, locs, sizes, params)       # (batch_size, image_v, image_h, n_obs)
-    depth = depth.min(axis=-1)                                      # (batch_size, image_v, image_h)
+    pos = pos[None, :, :, None]                                                 # (1, image_v, image_h, 1, 3)
+    dir = dir[None, :, :, None]                                                 # (1, image_v, image_h, 1, 3)
+    locs = locs[:, None, None]                                                  # (batch_size, image_v, image_h, n_obs, 3)
+    sizes = sizes[:, None, None]                                                # (batch_size, image_v, image_h, n_obs, 3)
+    depth = find_raycast_torch(pos, dir, locs, sizes, params)                   # (batch_size, image_v, image_h, n_obs)
+    depth = depth.min(axis=-1)                                                  # (batch_size, image_v, image_h)
     if params.render_ground:
-        ground_normal = np.array([np.random.uniform(-0.2, 0.2), np.random.uniform(-0.2, 0.2), -1])
-        ground_normal /= np.linalg.norm(ground_normal)
-        height = np.random.uniform(0.5, 2.0)
-        dir = dir[..., 0, :]                                        # (batch_size, image_v, image_h, 3)
+        r = R.from_quat(ori_base).inv()
+        ground_normal = r.apply([0, 0, -1]).astype(np.float32)                  # (batch_size, 3)
+        height = np.random.uniform(0.5, 2.0, batch_size).astype(np.float32)     # (batch_size,)
+        ground_normal = ground_normal[:, None, None]                            # (batch_size, 1, 1, 3)
+        height = height[:, None, None]                                          # (batch_size, 1, 1)
+        dir = dir[..., 0, :]                                                    # (1, image_v, image_h, 3)
         ground_depth = find_ground_torch(dir, ground_normal, height, params)
         depth = np.minimum(depth, ground_depth)
     if params.convert_infi_depth_to_zero:
@@ -278,6 +284,7 @@ def plot_render_rslts(obs_loc, obs_size, traj, goal, lin_vel, add_obs_loc, add_o
     os.makedirs(image_dir, exist_ok=True)
 
     plt.figure(figsize=(5, 5))
+    depth = np.clip(depth, 0, 20)
     plt.imshow(depth)
     plt.axis("off")
     plt.tight_layout()
@@ -342,6 +349,7 @@ if __name__ == "__main__":
     goals = data["goal"]
     lin_vels = data["lin_vel"]
     ang_vels = data["ang_vel"]
+    ori_bases = data["ori_base"]
 
     demo = {"depth": [],
             "goal": [],
@@ -362,6 +370,7 @@ if __name__ == "__main__":
         goal_batch = repeat(goals[i:i + batch_size], n_render_per_sample)
         lin_vel_batch = repeat(lin_vels[i:i + batch_size], n_render_per_sample)
         ang_vel_batch = repeat(ang_vels[i:i + batch_size], n_render_per_sample)
+        ori_base_batch = repeat(ori_bases[i:i + batch_size], n_render_per_sample)
 
         if params.n_additional_obs > 0:
             add_obs_list = Parallel(n_jobs=os.cpu_count())(delayed(generate_additional_obs)(traj, params)
@@ -371,7 +380,8 @@ if __name__ == "__main__":
         else:
             add_obs_loc_batch = add_obs_size_batch = None
 
-        depth_batch = render_depth(obs_loc_batch, obs_size_batch, add_obs_loc_batch, add_obs_size_batch, params)
+        depth_batch = render_depth(obs_loc_batch, obs_size_batch, add_obs_loc_batch, add_obs_size_batch,
+                                   ori_base_batch, params)
 
         demo["depth"].extend(depth_batch)
         demo["goal"].extend(goal_batch)
