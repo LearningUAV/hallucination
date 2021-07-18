@@ -1,7 +1,7 @@
 {
 	"info": null,
 	"use_AE": true,
-	"demo_dirs": ["2021-03-01-02-52-07_model_1100"],
+	"demo_dirs": ["2021-07-12-12-02-34_model_2000"],
 	"training_params": {
 		"AE_load_dir": null,
 		"AE_model_fname": null,
@@ -18,12 +18,13 @@
 		"odom_Dh": 8,
 		"knot_start": -3,
 		"knot_end": 18,
-		"knot_dt": 0.15,
-		"label_t_steps": 421,
+		"knot_dt": 0.25,
+		"label_t_steps": 701,
 		"image_size": 128,
-		"noise_scale": 0.03,
-		"max_depth": 20,
+		"noise_scale": 0.1,
+		"max_depth": 10,
 		"train_prop": 0.9,
-		"lambda_smoothness": 0.1
+		"lambda_smoothness": 100,
+		"lambda_initial_smoothness": 100
 	}
 }
