@@ -119,7 +119,7 @@ class Model(nn.Module):
         self.fc3 = nn.Linear(256, 256)
         self.fc4 = nn.Linear(256, self.num_control_pts * 3)
         # self.W = nn.Parameter(torch.rand(params.image_Dh, params.image_Dh))
-        self.coef = self._init_coef()
+        self.coef, self.acc_jerk_coef = self._init_coef()
 
     def _init_coef(self):
         # Find B-spline coef to convert control points to pos, vel, acc, jerk
@@ -127,12 +127,17 @@ class Model(nn.Module):
         knots = np.arange(model_params.knot_start, model_params.knot_end, 1) * model_params.knot_dt
         pos_bspline = BSpline(knots, np.eye(self.num_control_pts), 3, extrapolate=False)
         vel_bspline = pos_bspline.derivative(nu=1)
+        acc_bspline = pos_bspline.derivative(nu=2)
+        jerk_bspline = pos_bspline.derivative(nu=3)
         t = np.linspace(knots[3], knots[-4], model_params.label_t_steps)
         coef = np.array([pos_bspline(t), vel_bspline(t)])  # (4, 201, 3)
+        acc_jerk_coef = np.array([acc_bspline(t), jerk_bspline(t)])  # (4, 201, 3)
         assert not np.isnan(coef).any()
+        assert not np.isnan(acc_jerk_coef).any()
         # (1, 4, 201, num_control_pts)
         coef = torch.from_numpy(coef.astype(np.float32)[np.newaxis, ...]).to(self.params.device)
-        return coef
+        acc_jerk_coef = torch.from_numpy(acc_jerk_coef.astype(np.float32)[np.newaxis, ...]).to(self.params.device)
+        return coef, acc_jerk_coef
 
     def forward(self, image, goal, lin_vel, ang_vel, reconstruct_depth=False):
         image_h = self.encoder(image)
@@ -153,15 +158,19 @@ class Model(nn.Module):
         return outputs
 
     def BC_loss(self, control_pts, traj, lin_vel, ang_vel):
-        vel = control_pts[:, 1:] - control_pts[:, :-1]
-        acc = vel[:, 1:] - vel[:, :-1]
-        jerk = vel[:, 1:] - vel[:, :-1]
-        smoothness_loss = torch.mean(torch.sum(acc ** 2, dim=(1, 2)) + torch.sum(jerk ** 2, dim=(1, 2)))
-        smoothness_loss *= self.params.model_params.lambda_smoothness
+        # vel = control_pts[:, 1:] - control_pts[:, :-1]
+        # acc = vel[:, 1:] - vel[:, :-1]
+        # jerk = vel[:, 1:] - vel[:, :-1]
+        # smoothness_loss = torch.mean(torch.sum(acc ** 2, dim=(1, 2)) + torch.sum(jerk ** 2, dim=(1, 2)))
 
         control_pts = control_pts.view(-1, 1, self.num_control_pts, 3)      # (batch_size, 1, num_control_pts, 3)
         reconst_traj = torch.matmul(self.coef, control_pts)                 # (batch_size, 2, T, 3)
         reconst_loss = torch.mean(torch.sum((reconst_traj - traj) ** 2, dim=(1, 2, 3)))
+
+        acc_jerk_traj = torch.matmul(self.acc_jerk_coef, control_pts)        # (batch_size, 2, T, 3)
+        acc, jerk = torch.unbind(acc_jerk_traj, dim=1)
+        smoothness_loss = torch.mean(torch.sum(acc ** 2, dim=(1, 2)) + torch.sum(jerk ** 2, dim=(1, 2)))
+        smoothness_loss *= self.params.model_params.lambda_smoothness
 
         initial_pos, initial_vel = reconst_traj[:, 0, 0], reconst_traj[:, 1, 0]     # (batch_size, 3)
         initial_smoothness_loss = (initial_pos ** 2).sum(dim=-1).mean() + 10 * ((initial_vel - lin_vel) ** 2).sum(dim=-1).mean()
