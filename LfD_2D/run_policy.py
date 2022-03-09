@@ -14,8 +14,6 @@ import torch
 
 from LfD_main import TrainingParams, LfD_2D_model
 
-model_path = "2021-02-22-18-48-33"
-model_fname = "model_1000"
 update_dt = 0.04
 local_goal_dist = 1.5
 local_path_dir_dist = 0.5
@@ -256,8 +254,9 @@ class Predictor:
 if __name__ == '__main__':
 
     repo_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    params_path = os.path.join(repo_path, "rslts", "LfD_2D_rslts", model_path, "params.json")
-    model_path = os.path.join(repo_path, "rslts", "LfD_2D_rslts", model_path, "trained_models", model_fname)
+    folder_path = os.path.join("interesting_models", "LfD_2D", "2m_per_sec")
+    params_path = os.path.join(repo_path, folder_path, "params.json")
+    model_path = os.path.join(repo_path, folder_path, "trained_models", "model_1000")
 
     params = TrainingParams(params_path, train=False)
     device = torch.device("cpu")
